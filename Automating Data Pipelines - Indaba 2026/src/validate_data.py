@@ -1,69 +1,52 @@
+"""Module 5 - Validate.
+
+Cleaning changed representation; validation judges acceptability. Each check
+answers one question and returns evidence, so the pipeline can refuse to publish
+data it cannot trust.
+"""
 from pathlib import Path
 
 import pandas as pd
 
+from contract import ALLOWED_PREFIXES, ALLOWED_RANGES
 
-def validate_required_columns(
-    df: pd.DataFrame,
-    required_columns: list[str],
-) -> list[str]:
-    missing = [column for column in required_columns if column not in df.columns]
+
+def validate_known_plots(cleaned: pd.DataFrame) -> list[str]:
+    """Every plot code must belong to a known experimental plot."""
+    prefixes = cleaned["plot_code"].str.split("-").str[0].str.split(" ").str[0]
+    unknown = sorted(set(prefixes.dropna()) - ALLOWED_PREFIXES)
+    if unknown:
+        return [f"Unknown plot prefixes: {unknown}"]
+    return []
+
+
+def validate_ranges(cleaned: pd.DataFrame) -> list[str]:
+    """Each measurement must fall inside its physically plausible range."""
+    errors = []
+    for measurement, (low, high) in ALLOWED_RANGES.items():
+        values = cleaned.loc[cleaned["measurement"] == measurement, "value"]
+        out_of_range = values[(values < low) | (values > high)]
+        if not out_of_range.empty:
+            errors.append(
+                f"{measurement}: {len(out_of_range)} values outside "
+                f"[{low}, {high}]"
+            )
+    return errors
+
+
+def validate_timestamps(cleaned: pd.DataFrame) -> list[str]:
+    """Flag readings whose time could not be parsed."""
+    missing = int(cleaned["timestamp"].isna().sum())
     if missing:
-        return [f"Missing required columns: {missing}"]
+        return [f"{missing} rows have an unparseable timestamp"]
     return []
-
-
-def validate_allowed_values(
-    df: pd.DataFrame,
-    column: str,
-    allowed_values: set[str],
-) -> list[str]:
-    if column not in df.columns:
-        return []
-
-    actual_values = set(df[column].dropna().astype(str))
-    invalid_values = sorted(actual_values - allowed_values)
-
-    if invalid_values:
-        return [f"Unexpected values in {column}: {invalid_values}"]
-
-    return []
-
-
-def validate_non_negative(
-    df: pd.DataFrame,
-    columns: list[str],
-) -> list[str]:
-    errors = []
-
-    for column in columns:
-        if column in df.columns and (df[column] < 0).any():
-            errors.append(f"{column} contains negative values")
-
-    return errors
-
-
-def validate_not_missing(
-    df: pd.DataFrame,
-    columns: list[str],
-) -> list[str]:
-    errors = []
-
-    for column in columns:
-        if column in df.columns and df[column].isna().any():
-            count = int(df[column].isna().sum())
-            errors.append(f"{column} contains {count} missing values")
-
-    return errors
 
 
 def build_validation_report(errors: list[str]) -> pd.DataFrame:
     if not errors:
         return pd.DataFrame([{"status": "ok", "message": "Validation passed"}])
-
     return pd.DataFrame(
-        {"status": "error", "message": message}
-        for message in errors
+        {"status": "error", "message": message} for message in errors
     )
 
 

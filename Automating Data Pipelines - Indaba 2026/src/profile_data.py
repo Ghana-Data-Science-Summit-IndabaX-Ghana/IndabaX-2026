@@ -1,3 +1,8 @@
+"""Module 2 - Profile.
+
+A profile turns a million readings into one readable row-per-column diagnostic:
+what each column is, how much is missing, and how many distinct values it holds.
+"""
 from pathlib import Path
 
 import pandas as pd
@@ -21,18 +26,12 @@ def profile_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def profile_tables(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
-    """Profile every loaded table."""
-    return {name: profile_table(df) for name, df in tables.items()}
-
-
-def save_profiles(
-    profiles: dict[str, pd.DataFrame],
+def save_profile(
+    profile: pd.DataFrame,
     reports_dir: str | Path,
+    filename: str = "profile_readings.csv",
 ) -> None:
-    """Save profiling reports as CSV files."""
+    """Save a profile report as a CSV file."""
     output_dir = Path(reports_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    for name, profile in profiles.items():
-        profile.to_csv(output_dir / f"profile_{name}.csv", index=False)
+    profile.to_csv(output_dir / filename, index=False)

@@ -4,57 +4,71 @@
 
 **Automating a Ghana Agrivoltaics Data Pipeline**
 
-This is a 3-hour, code-along workshop that teaches participants how to build a repeatable data pipeline using a real agriculture dataset from Ghana. The tutorial is centered on agrivoltaics: farming under or near solar photovoltaic panels so that the same land can support both crop production and clean energy generation.
+This is a 3-hour, code-along workshop that teaches participants how to build a
+repeatable data pipeline from **real, messy field data** from Ghana. The dataset
+comes from an agrivoltaics pilot: farming under or near raised solar photovoltaic
+panels so the same land supports both crop production and clean energy.
 
 The teaching rhythm is practical:
 
 ```text
-demo
-build
-inspect
-fix
-checkpoint
+load
+reshape
+contract
+clean
+validate
+insights
 ```
 
 ## Main Problem
 
-**Can Ghanaian farms combine solar power generation with crop production without reducing harvest performance?**
+**Do raised solar panels keep the crops cooler - while still generating power?**
 
-Participants will use tabular field data to compare crop performance under raised solar panels against open-sun farming conditions. The goal is not only to analyze the data, but to learn how a raw dataset becomes trusted, validated, analysis-ready output through an automated pipeline.
+Participants use environmental sensor data to compare the **midday microclimate**
+under the agrivoltaic panels against an open-sun control field. The goal is not
+only to analyze the data, but to learn how a raw, messy dataset becomes trusted,
+validated, analysis-ready output through an automated pipeline.
 
 ## Dataset
-
-The workshop uses an agriculture dataset from the FAIR Forward Open Data and Use Cases catalog.
 
 - Catalog: https://fair-forward.github.io/datasets/
 - Dataset: https://www.kaggle.com/datasets/responsibleailab/agrivoltaic-dataset-ghana
 - Country: Ghana
-- Data type: Tabular
-- Crops: tomatoes, chilli pepper, and eggplant
-- Theme: crop yield, solar energy, food security, and climate adaptation
-- License: CC-BY 4.0
 - Provider: Responsible AI Lab, KNUST
+- License: CC-BY 4.0
 
-The dataset compares three experimental setups:
+**The data is environmental sensor telemetry, not crop yields:**
 
-- Open-sun control plot with no solar PV panels
-- Agrivoltaic plot with raised solar PV panels above crops
-- Traditional ground-mounted solar PV on bare land
+- 5 Excel workbooks, one per month (May-Oct 2024).
+- ~30 sheets per workbook - one sheet per day.
+- Each day-sheet is a wide grid: a plot-code row over a measurement row, with
+  time down the side, logged every 5 minutes (~1.1M readings total).
+- Measurements: irradiance (W/m2), temperature (C), humidity (%), rainfall (mm).
+
+The experiment has three plots plus a weather station:
+
+- **`AO` - Open control field:** open sun, no panels.
+- **`AG` - Agrivoltaic system:** raised PV panels with crops underneath.
+- **`PO` - Ground-mounted PV:** bare land, energy only.
+- **`WS` - Weather station:** ambient site reference.
+
+> Because the dataset has no yield numbers, the workshop answers the question the
+> data can answer: **microclimate** (light and heat), agrivoltaic vs open control.
 
 ## What Learners Will Build
 
-Learners will build a pipeline that:
+A pipeline that:
 
-1. Organizes raw dataset files.
-2. Loads tabular data into Python.
-3. Profiles columns, missing values, and data types.
-4. Defines a simple data contract.
-5. Cleans crop, plot, treatment, date, yield, and energy fields.
-6. Validates required fields and measurement rules.
-7. Transforms raw data into analysis-ready tables.
-8. Compares agrivoltaic crop performance with open-sun control performance.
-9. Saves processed outputs and charts.
-10. Runs the workflow as a repeatable pipeline.
+1. Lists the monthly workbooks and their daily sheets.
+2. Reads each raw sheet untouched.
+3. Reshapes the wide two-header grid into one tidy long table.
+4. Profiles columns, missingness, and cardinality.
+5. Decodes the plot codes into a data contract (treatments, stations, units).
+6. Cleans timestamps and numeric values without erasing evidence.
+7. Validates structure (stop) and data quality (quarantine + warn).
+8. Summarises to a daily, per-plot grain.
+9. Compares the agrivoltaic plot against its open reference at midday.
+10. Saves processed tables and a chart, runnable as one command.
 
 ## Folder Structure
 
@@ -66,15 +80,17 @@ Automating Data Pipelines - Indaba 2026/
   03_Exercises.md
   requirements.txt
   data/
-    raw/
-    processed/
+    raw/          # the 5 monthly Excel workbooks (ship with the repo)
+    processed/    # pipeline-generated tables
   notebooks/
     ghana_agrivoltaics_pipeline.ipynb
   src/
     ingest.py
-    profile_data.py
-    validate_data.py
+    reshape.py
+    contract.py
     transform.py
+    validate_data.py
+    profile_data.py
     run_pipeline.py
   outputs/
     charts/
@@ -83,50 +99,44 @@ Automating Data Pipelines - Indaba 2026/
 
 ## Material Guide
 
-- `01_Tutorial_Guide.md`: learner-facing tutorial with the step-by-step pipeline workflow.
-- `02_Facilitator_Guide.md`: 3-hour pacing, teaching notes, prompts, checkpoints, and common issues.
-- `03_Exercises.md`: module-aligned live tasks, checkpoints, and stretch exercises.
-- `requirements.txt`: Python packages needed for the workshop.
+- `01_Tutorial_Guide.md`: learner-facing step-by-step pipeline workflow.
+- `02_Facilitator_Guide.md`: pacing, teaching notes, prompts, checkpoints, issues.
+- `03_Exercises.md`: module-aligned live tasks, checkpoints, and stretch tasks.
+- `requirements.txt`: Python packages for the workshop.
 - `notebooks/ghana_agrivoltaics_pipeline.ipynb`: guided code-along notebook.
-- `data/raw/`: place the downloaded Kaggle dataset files here.
-- `data/processed/`: cleaned and transformed outputs will be written here.
-- `src/`: reusable pipeline scripts.
-- `outputs/charts/`: generated charts.
-- `outputs/reports/`: profiling and validation reports.
+- `src/`: the finished, runnable pipeline (`python src/run_pipeline.py`).
+- `data/raw/`: the monthly workbooks. `data/processed/`: generated tables.
+- `outputs/charts/`, `outputs/reports/`: charts and diagnostics.
 
 ## 3-Hour Flow
 
 | Time | Segment | Outcome |
 | --- | --- | --- |
-| 0:00-0:15 | Opening | Ghana agriculture problem and dataset context |
-| 0:15-0:35 | Module 1 | Raw files loaded |
-| 0:35-1:05 | Module 2 | Tables inspected and profiled |
-| 1:05-1:30 | Module 3 | Data contract drafted |
+| 0:00-0:25 | Opening | Problem, dataset, pipeline mental model |
+| 0:25-0:45 | Module 1 | Raw day-sheets loaded |
+| 0:45-1:10 | Module 2 | Data reshaped to tidy rows and profiled |
+| 1:10-1:30 | Module 3 | Plot codes decoded into a contract |
 | 1:30-1:40 | Break | Reset and catch up |
-| 1:40-2:05 | Module 4 | Fields cleaned and standardized |
+| 1:40-2:05 | Module 4 | Timestamps and values cleaned |
 | 2:05-2:30 | Module 5 | Validation report produced |
-| 2:30-2:50 | Module 6 | Crop summaries and charts created |
-| 2:50-3:00 | Wrap | Responsible interpretation |
+| 2:30-2:55 | Module 6 | Midday microclimate comparison and chart |
+| 2:55-3:00 | Wrap | Responsible interpretation |
 
 ## Recommended Setup
 
-Create a Python environment and install dependencies:
-
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-On Windows, `python` may be the correct command instead of `python3`.
+Run the finished pipeline at any time:
 
-Download the dataset manually from Kaggle and place the extracted files in:
-
-```text
-data/raw/
+```bash
+python src/run_pipeline.py
 ```
 
-If the Kaggle CLI is configured, the dataset can also be downloaded with:
+The workbooks already ship in `data/raw/`. To re-download from Kaggle:
 
 ```bash
 kaggle datasets download responsibleailab/agrivoltaic-dataset-ghana -p data/raw --unzip
@@ -134,16 +144,19 @@ kaggle datasets download responsibleailab/agrivoltaic-dataset-ghana -p data/raw 
 
 ## Responsible Data Use
 
-This dataset comes from a Ghanaian pilot and should not be treated as proof that agrivoltaics will work the same way across all farms, regions, soils, crop varieties, or economic conditions.
+This dataset comes from a single Ghanaian pilot site and measures microclimate,
+not yield. It should not be treated as proof that agrivoltaics will work the same
+way across all farms, regions, soils, crop varieties, or economic conditions.
 
 Participants should:
 
-- Credit the dataset provider and source catalog.
+- Credit the dataset provider and source catalog (CC-BY 4.0).
 - Avoid overgeneralizing from one pilot dataset.
-- Communicate uncertainty clearly.
-- Consider farmer context, land use, costs, maintenance, and market access.
+- Communicate uncertainty clearly (microclimate is not yield).
 - Treat pipeline outputs as decision support, not final policy or farming advice.
 
 ## Workshop Outcome
 
-By the end of the workshop, participants should understand how to turn a real agriculture dataset into a reliable, repeatable data pipeline that can support crop and energy analysis in Ghana.
+By the end, participants should be able to turn a real, messy agriculture dataset
+into a reliable, repeatable pipeline that produces a trustworthy, well-qualified
+answer.
