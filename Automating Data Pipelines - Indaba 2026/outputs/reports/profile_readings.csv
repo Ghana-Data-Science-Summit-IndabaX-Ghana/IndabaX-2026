@@ -1,0 +1,11 @@
+column,dtype,missing_count,missing_pct,unique_values
+date,datetime64[us],0,0.0,140
+raw_time,object,29338,2.62,424
+plot_code,str,0,0.0,17
+measurement,str,0,0.0,4
+value,float64,518864,46.32,3723
+treatment,str,0,0.0,4
+station,str,96615,8.63,3
+replicate,str,160735,14.35,3
+unit,str,0,0.0,4
+timestamp,datetime64[us],34778,3.1,31207

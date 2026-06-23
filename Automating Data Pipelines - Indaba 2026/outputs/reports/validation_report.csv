@@ -1,0 +1,5 @@
+status,message
+warning,"irradiance: 1 values outside [0, 1500]"
+warning,"temperature: 17766 values outside [5, 60]"
+warning,"humidity: 445 values outside [0, 100]"
+warning,34778 rows have an unparseable timestamp
