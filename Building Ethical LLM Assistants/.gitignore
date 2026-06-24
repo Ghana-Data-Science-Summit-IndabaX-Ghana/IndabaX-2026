@@ -1,0 +1,14 @@
+assist-demo/.git/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+*.egg-info/
+.DS_Store
+.pytest_cache/
+*.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+.chroma/

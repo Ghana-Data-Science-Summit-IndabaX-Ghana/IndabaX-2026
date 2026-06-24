@@ -1,31 +1,106 @@
-# Building Ethical LLM Assistants
+# LLM Assistants — Building Ethical LLM Assistants (Hands-On)
 
-**Track:** Advanced AI/ML (Day 2)
+This repo contains the code for the hands-on portion of *Building Ethical LLM Assistants* — a mastery-level tutorial on ethical AI deployment in the Ghanaian context. It covers a credit-access assistant in three stages: Base → RAG → Guardrailed, with a from-scratch observability dashboard and a Three-Dimensional Assessment (Technical 40% / Ethical 30% / Observability 30%).
 
-This folder holds the **facilitator facing notes** and the **hands on code** for the session. Workshop materials (Jupyter notebook, mock responses, dependencies) live in the **`code`** subfolder here.
+**Repos:**
+- This repo (`llm-assistants`) — shared `core` package + FastAPI backend + Colab notebooks
+- [`assist-demo`](https://github.com/King-Murah-s-Projects/assist-demo) — Next.js facilitator demo (projector UI)
 
-## Contents of this folder
+---
 
-**Ethical_LLM Detailed Notes.pdf**
+## For participants (Google Colab)
 
-A full session guide: learning objectives, theory modules (LLM foundations, ethical landscape, Ghana context, guardrails), facilitator teaching notes, lab sequencing, test scenarios, ethical audit template, appendices on timing and facilitation.
+Open the participant notebook and run the first cell:
 
-Use the PDF as the single source for what to say in the room, how long each block runs, and what students must submit. The notebook implements the technical path described in Part 2 of that document.
+```python
+%pip install git+https://github.com/King-Murah-s-Projects/llm-assistants.git -q
+```
 
-## Relationship to the `code` folder
+> **Note:** The repo must be public for this to work. If you can't access it, ask the facilitator for the local fallback.
 
-Everything for the lab is under **`code/`** in this same directory:
+The notebook defaults to `MOCK_MODE = True` — no API key needed. You can complete the entire session and the Three-Dimensional Assessment offline.
 
-**`code/ethical_llm_workshop.ipynb`** (main notebook)
+**To use a live API (optional):**
+Set `MOCK_MODE = False` and add your key to Colab Secrets:
+- `ANTHROPIC_API_KEY` — from [console.anthropic.com](https://console.anthropic.com)
+- `GOOGLE_API_KEY` — from [aistudio.google.com](https://aistudio.google.com) (for Gemma, free tier)
 
-**`code/workshop_mocks.py`** (imported by the notebook when `MOCK_MODE` is on)
+---
 
-See **`code/README.md`** for installation, Colab usage, `MOCK_MODE`, and API keys.
+## For the facilitator (local setup)
 
-## Session at a glance
+### 1. Clone and install
 
-**Theory:** Why LLM assistants fail (hallucination, bias, consent, accountability, adversarial use), how context in Ghana changes the risk picture, and how guardrails stack (system prompt, validation, filtering, human escalation, logging).
+```bash
+git clone https://github.com/King-Murah-s-Projects/llm-assistants.git
+cd llm-assistants
+pip install -e ".[dev]"
+```
 
-**Lab:** Build a minimal credit access assistant for Ghana, add retrieval augmented generation over a small knowledge base, run a seven scenario battery, complete a structured ethical audit.
+### 2. Configure environment
 
-**Deliverable:** The ethical audit, with quoted model outputs and retrieval logs as evidence; code supports that audit.
+```bash
+cp .env.example .env
+# Edit .env — fill in your API keys, or leave MOCK_MODE=true
+```
+
+### 3. Run the backend (demo server)
+
+```bash
+MOCK_MODE=true uvicorn backend.main:app --reload
+# Open http://localhost:8000/docs to verify
+```
+
+### 4. Run tests
+
+```bash
+MOCK_MODE=true python3.12 -m pytest tests/ -q
+```
+
+### 5. Generate the participant notebook
+
+```bash
+bash notebooks/generate_participant_notebook.sh
+# Produces notebooks/ethical_llm_workshop.ipynb (no instructor cells)
+```
+
+---
+
+## Project structure
+
+```
+llm-assistants/
+├── core/                   # Shared pip-installable package
+│   ├── config.py           # MOCK_MODE, DEFAULT_PROVIDER env vars
+│   ├── providers.py        # LLMProvider ABC + Anthropic/Gemma adapters
+│   ├── mocks.py            # Provider-aware canned responses (MOCK_MODE)
+│   ├── knowledge_base.py   # 4 verified Ghana financial docs + retrieval
+│   ├── prompts.py          # System prompts (OWASP-tagged)
+│   ├── runner.py           # run_base / run_rag / run_guardrailed
+│   ├── guardrails.py       # 5 guardrail layers + trust score
+│   ├── observability.py    # summarize_logs (Grafana stand-in)
+│   ├── export.py           # export_assessment (one-click export)
+│   └── logging.py          # make_log_entry
+├── backend/
+│   └── main.py             # FastAPI POST /chat + GET /observability
+├── notebooks/
+│   ├── ethical_llm_workshop_instructor.ipynb
+│   ├── ethical_llm_workshop.ipynb          # generated — do not edit directly
+│   └── generate_participant_notebook.sh
+├── ai-int/                 # Session design, notes, reference material
+├── docs/adr/               # Architecture Decision Records
+├── CONTEXT.md              # Domain glossary
+├── FACILITATOR_GUIDE.md    # Room runbook
+└── pyproject.toml
+```
+
+---
+
+## Key design decisions
+
+See `docs/adr/` for full rationale. In brief:
+
+- **MOCK_MODE** (default: on) — canned responses keyed by (scenario, stage, provider). The entire session including the audit runs offline.
+- **Dual provider** — Anthropic Claude Haiku 4.5 (native `system=`) and Google Gemma 4 (free tier, system prompt prepended). The provider toggle is pedagogically deliberate: Gemma's "free tier trains on your data" is a live consent/privacy teaching moment.
+- **Shared `core` + dependency injection** — the FastAPI backend and the notebook both call the same runner; the notebook passes its own inline, editable teaching artifacts into it.
+- **Five guardrail layers** — input validation, output filtering, trust score, human escalation, logging. From-scratch, inspectable code that maps to the NeMo/Grafana/Cleanlab enterprise stack conceptually.

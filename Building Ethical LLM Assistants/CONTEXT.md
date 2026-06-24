@@ -1,0 +1,61 @@
+# Context — Building Ethical LLM Assistants (Hands-On)
+
+Glossary for the hands-on (practical) portion of the 3-hour tutorial, Ghana, 25 June 2026.
+This file defines terms only. It is not a spec and holds no implementation detail.
+
+## Audience & roles
+
+- **Participant** — an attendee working through the material on their own machine. This is a **mastery class**: assume working LLM familiarity and lean technical (OWASP, RAG Triad, observability are fair game). Still keep the notebook **runnable by a beginner** — don't dumb down the concepts, but don't gate the build on prior infra knowledge either. (Supersedes the outline's "8/10 basic awareness" framing.)
+- **Facilitator** — the person delivering the session and running the projected demo. (You.)
+
+## Deliverables
+
+- **Participant notebook** — the Google Colab notebook each participant runs top-to-bottom. The thing participants build and audit. Anthropic-flavoured in the source material.
+- **Facilitator demo** — a Next.js UI (projector-only, read-only for participants) backed by a FastAPI service, run on the facilitator's machine. Mirrors what participants build, stage by stage. Participants watch it; they do not call it.
+- **Facilitator guide** — written instructions for running the code in the room.
+- **Assessment** (formerly "audit") — the participant's completed evaluation of the assistant, structured as the **Three-Dimensional Assessment** (Technical Robustness 40% / Ethical Alignment 30% / Observability & Efficiency 30%), per the syllabi. The primary learning deliverable; the code, logs, and observability dashboard are exhibits that make it defensible. Exported as one Markdown file (audit-plus-evidence).
+
+## Scope (the MVP use case)
+
+- **Target user** — a **smallholder farmer** in Ghana, addressed directly (not an intermediary extension officer).
+- **Single use case** — **input-credit eligibility + terms**: "do I qualify for a farm-input loan (seeds, fertiliser, agro-chemicals for a planting season), and what are its terms?" The assistant grounds eligibility and terms in cited sources. Out of scope: crop-agronomy advice, and making the credit *decision* itself (the guardrails forbid decisions).
+
+## The assistant, by stage
+
+The same **agricultural input-credit assistant** for smallholder farmers in Ghana, shown at three capability stages. The demo exposes these as switchable modes; the notebook builds them in sequence.
+
+- **Base assistant** — LLM + system prompt + interface. Responds only; no retrieval, no actions.
+- **RAG assistant** — base assistant + retrieval over a curated, inspectable **knowledge base** of Ghanaian agricultural input-credit documents. Grounds answers in retrieved sources and cites them.
+- **Guardrailed assistant** — RAG assistant + the explicitly-enforced guardrails stack (see below).
+
+## Key concepts
+
+- **MOCK_MODE** — a toggle that replaces live model calls with pre-cached responses, so the full flow (including the audit) runs with no API key and no connectivity. The room's primary cost- and reliability-control mechanism. Mocks are **provider-aware**: keyed by (scenario, stage, provider), so flipping providers offline still shows the Anthropic-vs-Gemma difference.
+- **Provider** — the LLM backend behind any assistant stage. Two are supported behind one interface: **Anthropic** (Claude Haiku 4.5, native `system=`) and **Gemma** (Google Gemma 4 free tier via the `google-genai` SDK; no system role, so the adapter prepends the system prompt to the user turn). Switchable by a toggle that is live-only (MOCK ignores it for routing but serves provider-flavored mocks). The **provider toggle** is visible on the projector to stage the "free tier trains on your data" privacy discussion.
+- **`core`** — the shared, pip-installable Python package that is the single source of truth for plumbing: provider adapters, `MOCK_MODE`, the knowledge base, the logger, and the **runner**. Both the FastAPI backend and the participant notebook depend on it (the notebook installs it from GitHub).
+- **Runner** — the function in `core` that executes an assistant pipeline. It takes the teaching artifacts (system prompt, retriever, guardrail functions) as arguments. FastAPI passes `core`'s defaults; the notebook passes its own inline, editable versions into the same runner — so the demo and the notebook run identical plumbing.
+- **Teaching artifacts** — the pieces of code participants must read and edit: the system prompts, the **retriever**, and the five guardrail functions. Defined inline in the notebook; shipped as identical defaults in `core`.
+- **Retriever** — the swappable object that turns a query into ranked chunks: `retrieve(query, k) → [chunk]`. Two adapters sit behind one interface — a transparent **keyword** baseline (token overlap, readable line-by-line) and a **Chroma** adapter (local sentence-transformer embeddings, semantic). Both index the same chunks so retrieval metrics compare fairly. The second editable teaching artifact, alongside the guardrail rule.
+- **Knowledge base** — the small, hand-inspectable set of Ghanaian agricultural input-credit **documents** the RAG assistant retrieves from. Each document is a Markdown fact-sheet (frontmatter: id, title, citable source) authored from a real Ghana programme, and is split into **chunks** for retrieval.
+- **Chunk** — the unit of retrieval: a contiguous slice of a document (roughly one `##` section, ~100–200 words). Retrieval returns chunks; each chunk carries its parent document's id and source so answers can cite.
+- **Golden dataset** — the ground-truth set of ~24 queries, each labelled with the document id(s) that should answer it, split into **dev** (tuned against) and **test** (reported on). Pinned at the document level so re-chunking experiments don't invalidate it. Includes deliberately colloquial/Pidgin phrasings to expose the keyword-vs-embeddings retrieval gap. The basis for retrieval metrics and the assessment's Context Relevance lens.
+- **Retrieval log** — the record of which knowledge-base documents were retrieved for a given query. An exhibit for the audit.
+- **Guardrails stack** — the layered set of ethical-enforcement mechanisms, each a small inspectable function composed into the guardrailed assistant's pipeline (input validation → retrieval → model call → output filtering → escalation check → log):
+  - **Input validation** — rule-based pre-model check for injection attempts and out-of-scope input. Out-of-scope has two tiers: **medical** queries are a hard pre-LLM **block** (unsafe to attempt); **agronomy** queries (what to plant, pest control, fertiliser choice — detected by intent-verb patterns, not crop nouns) are **non-blocking** — they raise an `out_of_scope_agronomy` flag for the log while the model answers with a redirect to MoFA extension services.
+  - **Output filtering** — rule-based post-model scan for prohibited patterns (guarantees, final decisions, fabricated specifics).
+  - **Human escalation** — a *simulated* check that returns a "needs a human" response on high-stakes triggers: final-decision request, legal liability, universal distress (emergency/desperate/self-harm), and **farmer debt/livelihood distress** (can't repay, losing land/farm, crop failure with debt). The referral points to agric-appropriate bodies (lender hardship desk, cooperative, MoFA extension, GIRSAL), not generic financial regulators. No real human is involved. Debt-distress escalations are evidence for the assessment's ethical dimension.
+  - **Logging & audit** — a structured per-request record (timestamp, query, provider, model, retrieved doc ids, input flags, output flags, escalation flag, response). The audit reads from this.
+- **Flag** — a structured marker emitted by a guardrail layer when it catches something (e.g. an injection attempt, a guarantee in the output). Flags appear in the log and are exhibits for the audit.
+- **Hands-on coding moments** — the room has exactly two type-from-scratch moments; everything else is run-and-audit. (1) **Retrieval experiment** — participants change one variable (keyword→Chroma, `k`, or embedding model) and re-run the golden-dataset eval to read the metric delta; the editable-retriever artifact and framework Step 5 fused. (2) **Type-one-guardrail** — participants fill in one guardrail rule (default: a prohibited-phrase pattern in the output filter) and watch it catch a crafted reply.
+
+## Spec-derived concepts (from the syllabi)
+
+The hands-on satisfies the syllabi's *objectives* by building the **from-scratch teaching version** of each enterprise mechanism in our stack. The named enterprise tools (NeMo Guardrails, OpenShift, vLLM, Colang, Grafana, Cleanlab TLM) are **referenced as "the production tool this maps to," not deployed.** Training-time/research items (DPO/LibraAlign, ACL staged release, CoT-steganography, watermarking) belong to the theory portion and appear only as optional appendix/stretch content.
+
+- **OWASP label** — the OWASP-Top-10-for-LLMs (2025) id attached to each concern/guardrail: LLM01 (prompt injection), LLM02 (sensitive-info disclosure), LLM06 (excessive agency), LLM07 (system-prompt leakage), LLM09 (misinformation/hallucination), LLM10 (unbounded consumption / "Denial of Wallet").
+- **RAG Triad** — the three RAG-evaluation lenses used in the assessment's technical dimension: **Context Relevance** (now quantified by the golden-dataset retrieval metrics — Recall@{3,5}, MRR, Precision@5 at document level, window k=5), **Groundedness**, and **Question/Answer Relevance**. Context Relevance is the retrieval-side lens; Groundedness and Answer Relevance are answer-side (manual review + LLM-as-judge), keeping the retrieval and answer evaluations separate.
+- **Answer evaluation** — offline measurement of response quality, separate from the runtime guardrails. Two layers: **deterministic code checks** (cites a real retrieved source id; hedges when retrieval is empty) and an **LLM-as-judge** call scoring Groundedness and Answer Relevance (0–1) with a rationale. Failures map to a pre-defined **answer failure taxonomy** (ungrounded claim, missing citation, register mismatch, over-hedge), surfaced through the observability dashboard beside the guardrail flags. Mocked in MOCK_MODE.
+- **Trust score** — a rule-based, inspectable 0.0–1.0 heuristic standing in for Cleanlab TLM's trustworthiness score, computed from output-filter flags + a **groundedness signal**. The groundedness signal is one shared deterministic check — `groundedness_signal(reply, chunks)`: top-chunk similarity above threshold + whether the reply cites a source id that was actually retrieved. The same signal feeds the offline answer evaluation (which adds the LLM-judge on top); the deterministic check has one source of truth, and the LLM-judge never runs at request time. Three bands: **≥0.7** deliver (Path A); **0.4–0.7** safe fallback message (Path B); **<0.4** escalate (Path B). The escalation layer fires on `score < 0.4` **or** a high-stakes intent trigger. The simplified version of `AI_Trustworthiness_Verification_Workflow.png`. **The five guardrail layers stay visibly separate** in code, log, and demo — the trust score is a signal that flows from the (still-distinct) output-filter layer into the (still-distinct) escalation layer; filtering and escalation are not merged.
+- **Observability dashboard** — an in-notebook + in-demo summary computed from the logs: flagged-interaction volume, violation taxonomy (counts by flag type), and token savings from inputs blocked pre-LLM (the "Denial of Wallet" / LLM10 mitigation). Stands in for Grafana.
+- **Three-Dimensional Assessment** — the deliverable rubric (Technical 40% / Ethical 30% / Observability 30%) that the assessment is organized under.
+- **Stakeholder Engagement Plan** — a written deliverable component (~3 structured short-answer prompts): how under-served and indigenous-language communities (Twi, Ga, Ewe, Hausa, Dagbani; Northern regions) would be involved as co-designers, who controls their data under Indigenous Data Sovereignty, and what veto/objection mechanism protects them. Lives in the Ethical dimension of the assessment; anchored by the Pidgin scenario and the Kwame/Fatima/Pidgin bias probes.
