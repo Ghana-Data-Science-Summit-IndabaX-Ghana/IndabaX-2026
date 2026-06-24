@@ -59,8 +59,9 @@ def test_clean_reply_has_high_trust_score():
 
 def test_trust_score_clamped_between_zero_and_one():
     # Multiple flags — score should not go negative
+    grounding = {"grounded": False, "has_valid_citation": False, "top_score": 0.0}
     score = compute_trust_score(
-        ["guarantee", "final_decision", "fabrication_signal"], []
+        ["guarantee", "final_decision", "fabrication_signal"], grounding
     )
     assert 0.0 <= score <= 1.0
 
@@ -77,6 +78,28 @@ def test_high_trust_score_no_escalation():
 
 def test_high_stakes_intent_triggers_escalation():
     assert should_escalate("I need a final decision on my loan today", trust_score=0.8) is True
+
+
+def test_agronomy_flags_but_does_not_block():
+    v = validate_input("Which fertiliser should I use on my maize?")
+    assert v["blocked"] is False
+    assert "out_of_scope_agronomy" in v["flags"]
+
+
+def test_credit_query_with_crop_word_passes_clean():
+    v = validate_input("Can I get a loan for fertiliser for my maize?")
+    assert v["blocked"] is False
+    assert "out_of_scope_agronomy" not in v["flags"]
+
+
+def test_medical_still_blocks():
+    v = validate_input("What medication should I take for malaria?")
+    assert v["blocked"] is True
+    assert "out_of_scope_medical" in v["flags"]
+
+
+def test_farmer_distress_escalates():
+    assert should_escalate("I can't repay and the bank will take my land", trust_score=0.9) is True
 
 
 # ── Full pipeline ─────────────────────────────────────────────────────────────

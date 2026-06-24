@@ -1,91 +1,64 @@
-"""
-RAG (Retrieval-Augmented Generation) stage runner.
-
-Wraps the base assistant with retrieval over the knowledge base.
-Teaching artifacts are dependency-injected so the notebook can pass
-its own inline, editable versions into the same pipeline.
-"""
-
+"""RAG stage: retrieval (seam) + answer generation (separable), composed."""
 from core.config import MOCK_MODE, DEFAULT_PROVIDER
 from core.mocks import get_mock
 from core.prompts import RAG_SYSTEM_PROMPT
-from core.knowledge_base import KNOWLEDGE_BASE, retrieve_relevant_documents, format_retrieved_context
+from core.knowledge_base import format_retrieved_context
+from core.retrieval import get_default_retriever
 from core.logging import make_log_entry
 
+_DEFAULT_K = 5
 
-def run_rag(
-    message: str,
-    provider_name: str | None = None,
-    history: list[dict] | None = None,
-    system_prompt: str | None = None,       # DI injection point
-    knowledge_base: list[dict] | None = None,   # DI injection point
-    retrieve_fn=None,                        # DI injection point
-) -> dict:
-    """
-    Run the RAG-augmented assistant.
 
-    Retrieval always runs (even in MOCK_MODE) so retrieval logs are
-    instructive offline — participants can see which docs were retrieved
-    even when the reply is canned.
+def generate_answer(query, chunks, system_prompt, provider_name, history=None, stage="rag"):
+    """Turn retrieved chunks into a grounded reply. Separate from retrieval."""
+    history = list(history) if history else []
+    if MOCK_MODE:
+        return {"reply": get_mock(query, stage, provider_name),
+                "model": f"mock/{provider_name}", "mock": True, "history": history}
+    augmented = (
+        f"USER QUESTION: {query}\n\n"
+        f"RETRIEVED DOCUMENTS:\n{format_retrieved_context(chunks)}\n\n"
+        "Answer the question based on the retrieved documents above.\n"
+        "If they do not contain the information needed, say so clearly.\n"
+    )
+    from core.providers import get_provider
+    provider = get_provider(provider_name)
+    history.append({"role": "user", "content": augmented})
+    reply = provider.complete(system_prompt, history)
+    return {"reply": reply, "model": provider.model, "mock": False, "history": history}
 
-    Returns:
-        {reply, provider, model, mock, history, retrieval_log, log_entry}
-    """
+
+def run_rag(message, provider_name=None, history=None, system_prompt=None, retriever=None):
+    """Compose retrieval + answer. Retrieval always runs (log is real even in MOCK)."""
     provider_name = (provider_name or DEFAULT_PROVIDER).lower()
     system = system_prompt if system_prompt is not None else RAG_SYSTEM_PROMPT
-    kb = knowledge_base if knowledge_base is not None else KNOWLEDGE_BASE
-    retrieve = retrieve_fn if retrieve_fn is not None else retrieve_relevant_documents
-    history = list(history) if history else []
+    retriever = retriever if retriever is not None else get_default_retriever()
 
-    # Step 1: Retrieve relevant documents (runs in all modes — log is always real)
-    retrieved_docs = retrieve(message, kb)
-    retrieved_context = format_retrieved_context(retrieved_docs)
+    chunks = retriever.retrieve(message, k=_DEFAULT_K)
+    doc_ids, seen = [], set()
+    for c in chunks:
+        if c["doc_id"] not in seen:
+            seen.add(c["doc_id"])
+            doc_ids.append(c["doc_id"])
+
+    answer = generate_answer(message, chunks, system, provider_name, history)
+    answer["history"].append({"role": "assistant", "content": answer["reply"]})
 
     retrieval_log = {
         "query": message,
-        "retrieved_doc_ids": [d["id"] for d in retrieved_docs],
-        "retrieved_doc_titles": [d["title"] for d in retrieved_docs],
+        "retrieved_doc_ids": doc_ids,
+        "retrieved_chunk_ids": [c["id"] for c in chunks],
+        "retrieved_doc_titles": [c["title"] for c in chunks],
+        "response": answer["reply"],
     }
-
-    if MOCK_MODE:
-        reply = get_mock(message, "rag", provider_name)
-        model = f"mock/{provider_name}"
-        is_mock = True
-    else:
-        # Step 2: Build augmented message with retrieved context
-        augmented_message = (
-            f"USER QUESTION: {message}\n\n"
-            f"RETRIEVED DOCUMENTS:\n{retrieved_context}\n\n"
-            "Please answer the user's question based on the retrieved documents above.\n"
-            "If the documents do not contain the information needed, say so clearly.\n"
-        )
-        from core.providers import get_provider
-        provider = get_provider(provider_name)
-        history.append({"role": "user", "content": augmented_message})
-        reply = provider.complete(system, history)
-        model = provider.model
-        is_mock = False
-
-    history.append({"role": "assistant", "content": reply})
-    retrieval_log["response"] = reply
-
     log_entry = make_log_entry(
-        query=message,
-        provider=provider_name,
-        model=model,
-        mock=is_mock,
-        stage="rag",
-        retrieved_ids=retrieval_log["retrieved_doc_ids"],
-        retrieved_titles=retrieval_log["retrieved_doc_titles"],
-        response=reply,
+        query=message, provider=provider_name, model=answer["model"],
+        mock=answer["mock"], stage="rag",
+        retrieved_ids=doc_ids, retrieved_titles=retrieval_log["retrieved_doc_titles"],
+        response=answer["reply"],
     )
-
     return {
-        "reply": reply,
-        "provider": provider_name,
-        "model": model,
-        "mock": is_mock,
-        "history": history,
-        "retrieval_log": retrieval_log,
-        "log_entry": log_entry,
+        "reply": answer["reply"], "provider": provider_name, "model": answer["model"],
+        "mock": answer["mock"], "history": answer["history"],
+        "retrieval_log": retrieval_log, "log_entry": log_entry,
     }

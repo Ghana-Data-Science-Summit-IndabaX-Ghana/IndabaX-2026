@@ -1,0 +1,24 @@
+{"id": "q01", "query": "Do I need a land title to get a fertiliser loan?", "expected_doc_ids": ["eligibility-basics"], "split": "dev"}
+{"id": "q02", "query": "Can I use my stored maize as security for a loan?", "expected_doc_ids": ["warehouse-receipt"], "split": "dev"}
+{"id": "q03", "query": "What interest rate will I pay on a farm loan and how is it shown?", "expected_doc_ids": ["rcb-terms", "borrowers-lenders-apr"], "split": "dev"}
+{"id": "q04", "query": "When do I repay an input loan?", "expected_doc_ids": ["rcb-terms"], "split": "dev"}
+{"id": "q05", "query": "Does GIRSAL pay my loan if I cannot repay?", "expected_doc_ids": ["girsal"], "split": "dev"}
+{"id": "q06", "query": "How does getting inputs on credit from an aggregator work?", "expected_doc_ids": ["outgrower-aggregator"], "split": "dev"}
+{"id": "q07", "query": "Will joining a cooperative help my loan application?", "expected_doc_ids": ["eligibility-basics", "outgrower-aggregator"], "split": "dev"}
+{"id": "q08-pidgin", "query": "Wetin I go need before dem fit give me loan for fertilizer?", "expected_doc_ids": ["eligibility-basics"], "split": "dev"}
+{"id": "q09-pidgin", "query": "If my maize dey for store, I fit use am collect money?", "expected_doc_ids": ["warehouse-receipt"], "split": "dev"}
+{"id": "q13", "query": "What documents prove I am actively farming?", "expected_doc_ids": ["eligibility-basics"], "split": "dev"}
+{"id": "q14", "query": "How does GIRSAL reduce my collateral requirements?", "expected_doc_ids": ["girsal", "eligibility-basics"], "split": "dev"}
+{"id": "q15", "query": "What commodities can I store in a GCX warehouse?", "expected_doc_ids": ["warehouse-receipt"], "split": "dev"}
+{"id": "q16", "query": "Can I repay my farm loan before the due date?", "expected_doc_ids": ["rcb-terms"], "split": "dev"}
+{"id": "q17", "query": "What fees should I expect when taking a farm loan from a rural bank?", "expected_doc_ids": ["rcb-terms", "borrowers-lenders-apr"], "split": "dev"}
+{"id": "q18", "query": "What happens if I sell my crop to a different buyer when I have an outgrower contract?", "expected_doc_ids": ["outgrower-aggregator"], "split": "dev"}
+{"id": "q19", "query": "How do I know if a lender is hiding extra costs in my loan?", "expected_doc_ids": ["borrowers-lenders-apr"], "split": "dev"}
+{"id": "q20-pidgin", "query": "Which bank dey use GIRSAL give loan to farmer?", "expected_doc_ids": ["girsal"], "split": "dev"}
+{"id": "q10-pidgin", "query": "Dem go charge me how much interest for the farm loan?", "expected_doc_ids": ["rcb-terms", "borrowers-lenders-apr"], "split": "test"}
+{"id": "q11-pidgin", "query": "GIRSAL be the people wey go give me the loan?", "expected_doc_ids": ["girsal"], "split": "test"}
+{"id": "q12-pidgin", "query": "I no get land paper, I fit still get input loan?", "expected_doc_ids": ["eligibility-basics"], "split": "test"}
+{"id": "q21", "query": "Can a woman farmer without a land title get an input loan?", "expected_doc_ids": ["eligibility-basics"], "split": "test"}
+{"id": "q22", "query": "What percentage of my grain value will a bank lend against a warehouse receipt?", "expected_doc_ids": ["warehouse-receipt"], "split": "test"}
+{"id": "q23", "query": "Is a lender required to give me a copy of my loan contract?", "expected_doc_ids": ["borrowers-lenders-apr"], "split": "test"}
+{"id": "q24", "query": "What are the advantages of joining an outgrower scheme for input finance?", "expected_doc_ids": ["outgrower-aggregator"], "split": "test"}

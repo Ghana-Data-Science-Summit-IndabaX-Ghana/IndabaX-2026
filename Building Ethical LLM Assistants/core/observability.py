@@ -14,7 +14,8 @@ economic framing for the token-savings metric.
 """
 
 
-def summarize_logs(logs: list[dict]) -> dict:
+def summarize_logs(logs: list[dict], retrieval_metrics: dict | None = None,
+                   answer_tags: list[str] | None = None) -> dict:
     """
     Summarize a list of log entries into the observability dashboard metrics.
 
@@ -62,6 +63,10 @@ def summarize_logs(logs: list[dict]) -> dict:
 
     caveat = "estimated · illustrative in MOCK" if has_mock else "estimated"
 
+    answer_taxonomy: dict[str, int] = {}
+    for t in (answer_tags or []):
+        answer_taxonomy[t] = answer_taxonomy.get(t, 0) + 1
+
     return {
         "total_requests": total_requests,
         "flagged_count": flagged_count,
@@ -70,4 +75,6 @@ def summarize_logs(logs: list[dict]) -> dict:
         "total_tokens_saved_estimated": total_tokens_saved,
         "mock_mode": has_mock,
         "caveat": caveat,
+        "retrieval_metrics": retrieval_metrics or {},
+        "answer_failure_taxonomy": answer_taxonomy,
     }

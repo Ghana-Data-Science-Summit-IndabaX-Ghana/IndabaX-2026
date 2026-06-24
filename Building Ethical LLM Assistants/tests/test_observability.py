@@ -73,6 +73,17 @@ def test_escalated_appears_in_taxonomy():
     assert result["violation_taxonomy"].get("escalated") == 1
 
 
+def test_summary_carries_optional_metrics():
+    base = summarize_logs([])  # back-compat: no extra args
+    assert "retrieval_metrics" in base and base["retrieval_metrics"] == {}
+    enriched = summarize_logs(
+        [], retrieval_metrics={"recall_at": {5: 0.8}, "mrr": 0.6},
+        answer_tags=["missing_citation", "missing_citation", "over_hedge"],
+    )
+    assert enriched["retrieval_metrics"]["mrr"] == 0.6
+    assert enriched["answer_failure_taxonomy"]["missing_citation"] == 2
+
+
 def test_observability_endpoint():
     # Hit the chat endpoint to populate the session log
     client.post("/chat", json={
