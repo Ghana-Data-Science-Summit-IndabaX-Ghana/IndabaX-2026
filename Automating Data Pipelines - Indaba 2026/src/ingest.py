@@ -1,13 +1,17 @@
+"""Module 1 - Load.
+
+Find the workbooks and read their day-sheets exactly as received, with no
+interpretation yet. Every Excel file is one month; every sheet is one day.
+"""
 from pathlib import Path
 
 import pandas as pd
 
-
-SUPPORTED_SUFFIXES = {".csv", ".xlsx", ".xls"}
+SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 
 
 def list_tabular_files(raw_dir: str | Path) -> list[Path]:
-    """Return supported tabular files from the raw data directory."""
+    """Return the supported workbooks in the raw data directory."""
     raw_path = Path(raw_dir)
     return sorted(
         path
@@ -16,25 +20,18 @@ def list_tabular_files(raw_dir: str | Path) -> list[Path]:
     )
 
 
-def load_table(path: str | Path) -> pd.DataFrame:
-    """Load a CSV or Excel file into a DataFrame."""
-    file_path = Path(path)
-    suffix = file_path.suffix.lower()
-
-    if suffix == ".csv":
-        return pd.read_csv(file_path)
-
-    if suffix in {".xlsx", ".xls"}:
-        return pd.read_excel(file_path)
-
-    raise ValueError(f"Unsupported file type: {file_path.suffix}")
+def list_day_sheets(path: str | Path) -> list[str]:
+    """Return the sheet names in one workbook (one sheet per day)."""
+    return pd.ExcelFile(path).sheet_names
 
 
-def load_raw_tables(raw_dir: str | Path) -> dict[str, pd.DataFrame]:
-    """Load all supported tabular files in raw_dir."""
-    tables = {}
+def load_raw_sheet(path: str | Path, sheet_name: str) -> pd.DataFrame:
+    """Read one day-sheet untouched: no header, nothing dropped."""
+    return pd.read_excel(path, sheet_name=sheet_name, header=None)
 
+
+def iter_raw_sheets(raw_dir: str | Path):
+    """Yield (file_path, sheet_name, raw_frame) for every day in every file."""
     for file_path in list_tabular_files(raw_dir):
-        tables[file_path.stem] = load_table(file_path)
-
-    return tables
+        for sheet_name in list_day_sheets(file_path):
+            yield file_path, sheet_name, load_raw_sheet(file_path, sheet_name)

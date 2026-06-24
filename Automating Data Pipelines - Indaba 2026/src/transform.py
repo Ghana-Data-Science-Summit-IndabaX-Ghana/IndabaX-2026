@@ -1,141 +1,83 @@
+"""Module 4 & 6 - Clean and Insights.
+
+Cleaning turns messy cells into trustworthy values without erasing evidence.
+The insight stage aggregates the tidy readings to answer the microclimate
+question: do the raised panels soften the light and heat reaching the crops?
+"""
 import pandas as pd
 
+MIDDAY_START = "11:00"
+MIDDAY_END = "14:00"
 
-def clean_text(value):
-    if pd.isna(value):
-        return value
-    return str(value).strip().lower().replace("_", " ")
+# What "open" means depends on the sensor. The control field has no light
+# sensor, so full-sun irradiance is referenced against the ground-mounted PV.
+BASELINE_BY_MEASUREMENT = {
+    "temperature": "open_sun_control",
+    "humidity": "open_sun_control",
+    "irradiance": "ground_mounted_pv",
+}
 
 
-def clean_column_name(value):
-    return (
-        str(value)
-        .strip()
-        .lower()
-        .replace(" ", "_")
-        .replace("-", "_")
+def clean_long_table(long_table: pd.DataFrame) -> pd.DataFrame:
+    """Build real timestamps and numeric values; failures become NaT / NaN."""
+    cleaned = long_table.copy()
+    cleaned["date"] = pd.to_datetime(cleaned["date"], errors="coerce")
+
+    # Combine the sheet date with the row time. Junk like
+    # '11:34 - Need network restart' simply coerces to NaT.
+    stamp = (
+        cleaned["date"].dt.strftime("%Y-%m-%d")
+        + " "
+        + cleaned["raw_time"].astype(str)
     )
-
-
-def standardize_crop(value):
-    value = clean_text(value)
-
-    crop_map = {
-        "tomato": "tomato",
-        "tomatoes": "tomato",
-        "chilli": "chilli pepper",
-        "chili": "chilli pepper",
-        "chilli pepper": "chilli pepper",
-        "chili pepper": "chilli pepper",
-        "egg plant": "eggplant",
-        "eggplant": "eggplant",
-    }
-
-    return crop_map.get(value, value)
-
-
-def standardize_treatment(value):
-    value = clean_text(value)
-
-    if value in {"control", "open sun", "open-sun", "no pv", "no panels"}:
-        return "open_sun_control"
-
-    if value in {"agrivoltaic", "raised pv", "under pv", "under panels", "solar pv"}:
-        return "agrivoltaic"
-
-    if value in {"ground mounted pv", "ground-mounted pv", "bare land pv"}:
-        return "ground_mounted_pv"
-
-    return value
-
-
-def rename_with_contract(
-    df: pd.DataFrame,
-    column_map: dict[str, str],
-) -> pd.DataFrame:
-    rename_map = {
-        raw_column: standard_column
-        for standard_column, raw_column in column_map.items()
-        if raw_column in df.columns
-    }
-
-    renamed = df.rename(columns=rename_map).copy()
-    renamed.columns = [clean_column_name(column) for column in renamed.columns]
-    return renamed
-
-
-def clean_pipeline_table(df: pd.DataFrame) -> pd.DataFrame:
-    cleaned = df.copy()
-
-    if "crop" in cleaned.columns:
-        cleaned["crop"] = cleaned["crop"].apply(standardize_crop)
-
-    if "treatment" in cleaned.columns:
-        cleaned["treatment"] = cleaned["treatment"].apply(standardize_treatment)
-
-    if "date" in cleaned.columns:
-        cleaned["date"] = pd.to_datetime(cleaned["date"], errors="coerce")
-
-    for column in ["yield_value", "energy_value"]:
-        if column in cleaned.columns:
-            cleaned[column] = pd.to_numeric(cleaned[column], errors="coerce")
-
+    cleaned["timestamp"] = pd.to_datetime(stamp, errors="coerce")
+    cleaned["value"] = pd.to_numeric(cleaned["value"], errors="coerce")
     return cleaned
 
 
-def summarize_crop_performance(df: pd.DataFrame) -> pd.DataFrame:
-    required_columns = ["crop", "treatment", "yield_value"]
-    missing = [column for column in required_columns if column not in df.columns]
-
-    if missing:
-        raise ValueError(f"Cannot summarize crop performance. Missing columns: {missing}")
-
+def daily_plot_summary(cleaned: pd.DataFrame) -> pd.DataFrame:
+    """Average each plot's readings per day and measurement."""
     return (
-        df.dropna(subset=["crop", "treatment", "yield_value"])
-        .groupby(["crop", "treatment"], dropna=False)
+        cleaned.dropna(subset=["timestamp", "value"])
+        .groupby(["date", "treatment", "station", "measurement"], dropna=False)
         .agg(
-            observations=("yield_value", "count"),
-            mean_yield=("yield_value", "mean"),
-            median_yield=("yield_value", "median"),
-            min_yield=("yield_value", "min"),
-            max_yield=("yield_value", "max"),
+            observations=("value", "count"),
+            mean_value=("value", "mean"),
+            min_value=("value", "min"),
+            max_value=("value", "max"),
         )
         .reset_index()
     )
 
 
-def compare_treatments(summary: pd.DataFrame) -> pd.DataFrame:
-    comparison = (
-        summary.pivot(index="crop", columns="treatment", values="mean_yield")
-        .reset_index()
-    )
+def midday_microclimate(cleaned: pd.DataFrame) -> pd.DataFrame:
+    """Compare the agrivoltaic plot against its open reference at midday.
 
-    if {"agrivoltaic", "open_sun_control"}.issubset(comparison.columns):
-        comparison["yield_difference"] = (
-            comparison["agrivoltaic"] - comparison["open_sun_control"]
+    Each measurement is compared with the right baseline: temperature and
+    humidity against the open-sun control field, irradiance against the
+    full-sun ground-mounted panels.
+    """
+    midday = cleaned.dropna(subset=["timestamp", "value"]).set_index("timestamp")
+    midday = midday.between_time(MIDDAY_START, MIDDAY_END).reset_index()
+
+    means = midday.groupby(["measurement", "treatment"])["value"].mean().to_dict()
+
+    rows = []
+    for measurement, baseline in BASELINE_BY_MEASUREMENT.items():
+        agrivoltaic = means.get((measurement, "agrivoltaic"))
+        reference = means.get((measurement, baseline))
+        if agrivoltaic is None or reference is None:
+            continue
+        difference = agrivoltaic - reference
+        rows.append(
+            {
+                "measurement": measurement,
+                "agrivoltaic": round(agrivoltaic, 2),
+                "reference": baseline,
+                "reference_value": round(reference, 2),
+                "difference": round(difference, 2),
+                "difference_pct": round(difference / reference * 100, 2),
+            }
         )
-        comparison["yield_difference_pct"] = (
-            comparison["yield_difference"] / comparison["open_sun_control"] * 100
-        ).round(2)
 
-    return comparison
-
-
-def summarize_energy(df: pd.DataFrame) -> pd.DataFrame:
-    if "energy_value" not in df.columns:
-        raise ValueError("Cannot summarize energy data. Missing column: energy_value")
-
-    group_columns = ["treatment"]
-    if "plot" in df.columns:
-        group_columns = ["plot", "treatment"]
-
-    return (
-        df.dropna(subset=["energy_value"])
-        .groupby(group_columns, dropna=False)
-        .agg(
-            observations=("energy_value", "count"),
-            mean_energy=("energy_value", "mean"),
-            total_energy=("energy_value", "sum"),
-        )
-        .reset_index()
-    )
+    return pd.DataFrame(rows)

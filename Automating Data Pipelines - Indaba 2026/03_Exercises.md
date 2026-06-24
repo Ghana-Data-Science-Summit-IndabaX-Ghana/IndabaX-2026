@@ -6,15 +6,16 @@ These exercises are designed for a 3-hour code-along workshop.
 
 You will build a pipeline around this question:
 
-> Can Ghanaian farms combine solar power generation with crop production without reducing harvest performance?
+> Do raised solar panels keep the crops cooler - while still generating power?
 
-Dataset:
+Dataset: https://www.kaggle.com/datasets/responsibleailab/agrivoltaic-dataset-ghana
+Catalog: https://fair-forward.github.io/datasets/
 
-https://www.kaggle.com/datasets/responsibleailab/agrivoltaic-dataset-ghana
-
-Catalog:
-
-https://fair-forward.github.io/datasets/
+The data is **environmental sensor telemetry**: 5 monthly Excel workbooks, ~30
+day-sheets each, a wide two-header grid logged every 5 minutes. There is no crop
+yield - only irradiance, temperature, humidity, and rainfall across three plots
+(`AO` open control, `AG` agrivoltaic, `PO` ground-mounted PV) and a weather
+station (`WS`).
 
 ## Exercise Format
 
@@ -27,14 +28,14 @@ Each module has:
 By the end, you should produce:
 
 ```text
-outputs/reports/profile_*.csv
+outputs/reports/profile_readings.csv
 outputs/reports/validation_report.csv
-data/processed/crop_performance_summary.csv
-data/processed/treatment_comparison.csv
-outputs/charts/mean_crop_yield_by_treatment.png
+data/processed/daily_plot_summary.csv
+data/processed/midday_microclimate.csv
+outputs/charts/midday_microclimate.png
 ```
 
-## Opening Exercise: Frame The Problem
+## Opening Exercise: Frame the Problem
 
 ### Live Task
 
@@ -46,436 +47,333 @@ Write short answers:
 
 ### Checkpoint
 
-You should be able to explain the problem in one sentence.
+Explain the problem in one sentence, e.g.:
 
-Example:
-
-> We are building a pipeline to compare crop performance under agrivoltaic and open-sun conditions in Ghana.
+> We are building a pipeline to compare the midday microclimate under
+> agrivoltaic panels against an open-sun control field in Ghana.
 
 ### Stretch
 
-List two extra datasets that would strengthen the analysis.
+List two extra datasets that would strengthen the analysis (e.g. crop yield,
+soil moisture, installation cost, farmer surveys).
 
-Examples:
-
-- weather data
-- soil data
-- crop prices
-- installation cost data
-- farmer survey data
-
-## Module 1 Exercise: Load Raw Files
+## Module 1 Exercise: Load the Raw Sheets
 
 ### Live Task
 
-Place the downloaded and extracted Kaggle dataset files in:
-
-```text
-data/raw/
-```
-
-Then list the files:
+The workbooks ship in `data/raw/`. List them and peek inside one:
 
 ```python
 from pathlib import Path
-
-RAW_DIR = Path("data/raw")
-
-for path in sorted(RAW_DIR.glob("*")):
-    print(path.name)
-```
-
-Load CSV and Excel files:
-
-```python
 import pandas as pd
 
-files = [
-    path for path in sorted(RAW_DIR.glob("*"))
-    if path.suffix.lower() in [".csv", ".xlsx", ".xls"]
-]
+RAW_DIR = Path("data/raw")
+SUPPORTED = {".csv", ".xls", ".xlsx"}
 
-tables = {}
+workbooks = sorted(p for p in RAW_DIR.glob("*") if p.suffix.lower() in SUPPORTED)
+for path in workbooks:
+    print(path.name)
 
-for file in files:
-    if file.suffix.lower() == ".csv":
-        tables[file.stem] = pd.read_csv(file)
-    else:
-        tables[file.stem] = pd.read_excel(file)
+sheets = pd.ExcelFile(workbooks[0]).sheet_names
+print(workbooks[0].name, "->", len(sheets), "sheets")
 
-for name, df in tables.items():
-    print(name, df.shape)
+raw = pd.read_excel(workbooks[0], sheet_name=sheets[0], header=None)
+raw.iloc[:5, :8]
 ```
 
 ### Checkpoint
 
-You should have:
-
-- at least one raw file listed
-- a `tables` dictionary
-- printed table names and shapes
+- All five workbooks are listed.
+- You can enumerate the day-sheets inside one workbook.
+- You can read a single raw sheet with `header=None`.
 
 ### Stretch
 
-Print the memory usage of each loaded table:
+Count the total number of day-sheets across all five workbooks.
 
-```python
-for name, df in tables.items():
-    memory_mb = df.memory_usage(deep=True).sum() / 1_000_000
-    print(name, round(memory_mb, 2), "MB")
-```
-
-## Module 2 Exercise: Inspect And Profile
+## Module 2 Exercise: Reshape and Profile
 
 ### Live Task
 
-Inspect every table:
+Write the header detector and the reshape:
 
 ```python
-for name, df in tables.items():
-    print(f"\n{name}")
-    print("shape:", df.shape)
-    print("columns:", list(df.columns))
-    display(df.head())
+import re
+
+MEASUREMENT_LABELS = {"Irr (W/m2)", "T (oC)", "RH (%)", "P (mm)"}
+
+def detect_header_rows(raw):
+    for i in range(min(6, len(raw))):
+        labels = {str(v).strip() for v in raw.iloc[i] if isinstance(v, str)}
+        if labels & MEASUREMENT_LABELS:
+            return i - 1, i
+    raise ValueError("No measurement header row found")
+
+def parse_sheet_date(sheet_name):
+    tokens = [t for t in re.split(r"[ _]+", sheet_name.strip()) if t]
+    if len(tokens) < 3 or not all(t.isdigit() for t in tokens[:3]):
+        return None
+    day, month, year = (int(t) for t in tokens[:3])
+    year += 2000 if year < 100 else 0
+    return pd.Timestamp(year=year, month=month, day=day)
+
+def tidy_sheet(raw, sheet_date):
+    plot_row, meas_row = detect_header_rows(raw)
+    plot_codes = raw.iloc[plot_row].ffill()
+    measurements = raw.iloc[meas_row]
+    body = raw.iloc[meas_row + 1:].reset_index(drop=True)
+    raw_time = body.iloc[:, 0]
+
+    columns = []
+    for col in range(1, raw.shape[1]):
+        plot, meas = plot_codes.iloc[col], measurements.iloc[col]
+        if not (isinstance(plot, str) and isinstance(meas, str)):
+            continue
+        if meas.strip() not in MEASUREMENT_LABELS:
+            continue
+        columns.append(pd.DataFrame({
+            "date": sheet_date, "raw_time": raw_time.values,
+            "plot_code": plot.strip(), "measurement": meas.strip(),
+            "value": body.iloc[:, col].values,
+        }))
+    return pd.concat(columns, ignore_index=True)
 ```
 
-Create a profile function:
+Build the full table and profile it:
 
 ```python
+frames = []
+for workbook in workbooks:
+    for sheet in pd.ExcelFile(workbook).sheet_names:
+        sheet_date = parse_sheet_date(sheet)
+        if sheet_date is None:
+            continue
+        raw_sheet = pd.read_excel(workbook, sheet_name=sheet, header=None)
+        frames.append(tidy_sheet(raw_sheet, sheet_date))
+
+long_table = pd.concat(frames, ignore_index=True)
+
 def profile_table(df):
     return pd.DataFrame({
         "column": df.columns,
-        "dtype": [str(df[col].dtype) for col in df.columns],
-        "missing_count": [int(df[col].isna().sum()) for col in df.columns],
-        "missing_pct": [round(float(df[col].isna().mean() * 100), 2) for col in df.columns],
-        "unique_values": [int(df[col].nunique(dropna=True)) for col in df.columns],
+        "dtype": [str(df[c].dtype) for c in df.columns],
+        "missing_pct": [round(df[c].isna().mean() * 100, 2) for c in df.columns],
+        "unique_values": [df[c].nunique(dropna=True) for c in df.columns],
     })
-```
 
-Save profiles:
-
-```python
 REPORTS_DIR = Path("outputs/reports")
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-
-for name, df in tables.items():
-    profile = profile_table(df)
-    profile.to_csv(REPORTS_DIR / f"profile_{name}.csv", index=False)
-    display(profile)
+profile = profile_table(long_table)
+profile.to_csv(REPORTS_DIR / "profile_readings.csv", index=False)
+profile
 ```
 
 ### Checkpoint
 
 Answer:
 
-1. Which table looks like crop performance data?
-2. Which table looks like energy data?
-3. Which columns look like crop, treatment, and yield?
-4. Which columns have missing values?
+1. How many readings are in `long_table`?
+2. What percentage of `value` is missing?
+3. How many distinct `plot_code`s and `measurement`s are there?
 
 ### Stretch
 
-Create a quick missingness summary across all tables:
+One sheet in July uses underscores (`1_07_24`) and some sheets have a blank top
+row. Confirm your `detect_header_rows` and `parse_sheet_date` handle both.
 
-```python
-missing_summary = []
-
-for name, df in tables.items():
-    missing_summary.append({
-        "table": name,
-        "rows": len(df),
-        "columns": len(df.columns),
-        "total_missing": int(df.isna().sum().sum()),
-    })
-
-pd.DataFrame(missing_summary)
-```
-
-## Module 3 Exercise: Define The Data Contract
+## Module 3 Exercise: Define the Data Contract
 
 ### Live Task
 
-Fill in the raw column names for the fields you can find:
+Encode the legend and decode the codes:
 
 ```python
-COLUMN_MAP = {
-    "plot": "replace_with_raw_column_name",
-    "treatment": "replace_with_raw_column_name",
-    "crop": "replace_with_raw_column_name",
-    "replicate": "replace_with_raw_column_name",
-    "date": "replace_with_raw_column_name",
-    "yield_value": "replace_with_raw_column_name",
-    "yield_unit": "replace_with_raw_column_name",
-    "energy_value": "replace_with_raw_column_name",
-    "energy_unit": "replace_with_raw_column_name",
-}
-```
+MEASUREMENT_NAMES = {"Irr (W/m2)": "irradiance", "T (oC)": "temperature",
+                     "RH (%)": "humidity", "P (mm)": "rainfall"}
+MEASUREMENT_UNITS = {"irradiance": "W/m2", "temperature": "C",
+                     "humidity": "%", "rainfall": "mm"}
+TREATMENT_BY_PREFIX = {"AG": "agrivoltaic", "AO": "open_sun_control",
+                       "PO": "ground_mounted_pv", "WS": "ambient"}
+ALLOWED_PREFIXES = set(TREATMENT_BY_PREFIX)
+ALLOWED_RANGES = {"irradiance": (0, 1500), "temperature": (5, 60),
+                  "humidity": (0, 100), "rainfall": (0, 300)}
 
-If a field is not present, remove it from the map or leave a note.
+def parse_plot_code(code):
+    base, _, replicate = code.strip().partition(" ")
+    prefix, _, station = base.partition("-")
+    return {"prefix": prefix, "station": station or None,
+            "replicate": replicate or None,
+            "treatment": TREATMENT_BY_PREFIX.get(prefix, "unknown")}
 
-Create the rename function:
+def apply_contract(long_table):
+    out = long_table.copy()
+    parts = out["plot_code"].map(parse_plot_code)
+    out["treatment"] = [p["treatment"] for p in parts]
+    out["station"] = [p["station"] for p in parts]
+    out["replicate"] = [p["replicate"] for p in parts]
+    out["measurement"] = out["measurement"].map(MEASUREMENT_NAMES).fillna(
+        out["measurement"])
+    out["unit"] = out["measurement"].map(MEASUREMENT_UNITS)
+    return out
 
-```python
-def clean_column_name(value):
-    return (
-        str(value)
-        .strip()
-        .lower()
-        .replace(" ", "_")
-        .replace("-", "_")
-    )
-
-
-def rename_with_contract(df, column_map):
-    rename_map = {
-        raw_column: standard_column
-        for standard_column, raw_column in column_map.items()
-        if raw_column in df.columns
-    }
-
-    renamed = df.rename(columns=rename_map).copy()
-    renamed.columns = [clean_column_name(col) for col in renamed.columns]
-    return renamed
-```
-
-Apply it:
-
-```python
-crop_table_name = "replace_with_actual_table_name"
-crop_raw = tables[crop_table_name]
-crop_renamed = rename_with_contract(crop_raw, COLUMN_MAP)
-
-print(crop_renamed.columns)
+contracted = apply_contract(long_table)
 ```
 
 ### Checkpoint
 
-You should have a crop table with standard column names for at least:
-
-- `crop`
-- `treatment`
-- `yield_value`
+- `parse_plot_code("AG-PV P3")` returns treatment `agrivoltaic`, station `PV`,
+  replicate `P3`.
+- Every prefix in the data maps to a known treatment (none are `unknown`).
 
 ### Stretch
 
-Write a short note explaining which fields were ambiguous and how you resolved them.
+Write a short note: what do the `TI` and `SS` stations measure, and how would you
+confirm it from the data?
 
-## Module 4 Exercise: Clean And Standardize
+## Module 4 Exercise: Clean and Standardize
 
 ### Live Task
 
-Create cleaning functions:
-
 ```python
-def clean_text(value):
-    if pd.isna(value):
-        return value
-    return str(value).strip().lower().replace("_", " ")
-```
+def clean_long_table(long_table):
+    cleaned = long_table.copy()
+    cleaned["date"] = pd.to_datetime(cleaned["date"], errors="coerce")
+    stamp = (cleaned["date"].dt.strftime("%Y-%m-%d")
+             + " " + cleaned["raw_time"].astype(str))
+    cleaned["timestamp"] = pd.to_datetime(stamp, errors="coerce")
+    cleaned["value"] = pd.to_numeric(cleaned["value"], errors="coerce")
+    return cleaned
 
-Standardize crop names:
-
-```python
-def standardize_crop(value):
-    value = clean_text(value)
-
-    crop_map = {
-        "tomato": "tomato",
-        "tomatoes": "tomato",
-        "chilli": "chilli pepper",
-        "chili": "chilli pepper",
-        "chilli pepper": "chilli pepper",
-        "chili pepper": "chilli pepper",
-        "egg plant": "eggplant",
-        "eggplant": "eggplant",
-    }
-
-    return crop_map.get(value, value)
-```
-
-Standardize treatment names:
-
-```python
-def standardize_treatment(value):
-    value = clean_text(value)
-
-    if value in ["control", "open sun", "open-sun", "no pv", "no panels"]:
-        return "open_sun_control"
-
-    if value in ["agrivoltaic", "raised pv", "under pv", "under panels", "solar pv"]:
-        return "agrivoltaic"
-
-    if value in ["ground mounted pv", "ground-mounted pv", "bare land pv"]:
-        return "ground_mounted_pv"
-
-    return value
-```
-
-Clean the table:
-
-```python
-crop_clean = crop_renamed.copy()
-
-if "crop" in crop_clean.columns:
-    crop_clean["crop"] = crop_clean["crop"].apply(standardize_crop)
-
-if "treatment" in crop_clean.columns:
-    crop_clean["treatment"] = crop_clean["treatment"].apply(standardize_treatment)
-
-if "date" in crop_clean.columns:
-    crop_clean["date"] = pd.to_datetime(crop_clean["date"], errors="coerce")
-
-if "yield_value" in crop_clean.columns:
-    crop_clean["yield_value"] = pd.to_numeric(crop_clean["yield_value"], errors="coerce")
-```
-
-Inspect cleaned values:
-
-```python
-for column in ["crop", "treatment"]:
-    if column in crop_clean.columns:
-        print(column, sorted(crop_clean[column].dropna().unique()))
+cleaned = clean_long_table(contracted)
+print("unparseable timestamps:", int(cleaned["timestamp"].isna().sum()))
+print("missing / non-numeric values:", int(cleaned["value"].isna().sum()))
 ```
 
 ### Checkpoint
 
-Crop and treatment values should be consistent enough to group by.
+`timestamp` is datetime (or visible `NaT`) and `value` is numeric (or visible
+`NaN`). The original `long_table` is unchanged.
 
 ### Stretch
 
-Find the raw values that changed after standardization.
+Find an example of a `raw_time` cell that became `NaT` and explain why.
 
 ## Module 5 Exercise: Validate
 
 ### Live Task
 
-Run validation checks:
-
 ```python
-ALLOWED_CROPS = {"tomato", "chilli pepper", "eggplant"}
-ALLOWED_TREATMENTS = {"open_sun_control", "agrivoltaic", "ground_mounted_pv"}
+def validate_known_plots(cleaned):
+    prefixes = cleaned["plot_code"].str.split("-").str[0].str.split(" ").str[0]
+    unknown = sorted(set(prefixes.dropna()) - ALLOWED_PREFIXES)
+    return [f"Unknown plot prefixes: {unknown}"] if unknown else []
 
-errors = []
+def validate_ranges(cleaned):
+    errors = []
+    for name, (low, high) in ALLOWED_RANGES.items():
+        values = cleaned.loc[cleaned["measurement"] == name, "value"]
+        bad = values[(values < low) | (values > high)]
+        if not bad.empty:
+            errors.append(f"{name}: {len(bad)} values outside [{low}, {high}]")
+    return errors
 
-required_columns = ["crop", "treatment", "yield_value"]
-missing = [column for column in required_columns if column not in crop_clean.columns]
-if missing:
-    errors.append(f"Missing required columns: {missing}")
+def validate_timestamps(cleaned):
+    missing = int(cleaned["timestamp"].isna().sum())
+    return [f"{missing} rows have an unparseable timestamp"] if missing else []
 
-if "crop" in crop_clean.columns:
-    invalid_crops = sorted(set(crop_clean["crop"].dropna()) - ALLOWED_CROPS)
-    if invalid_crops:
-        errors.append(f"Unexpected crop values: {invalid_crops}")
+hard_errors = validate_known_plots(cleaned)
+warnings = validate_ranges(cleaned) + validate_timestamps(cleaned)
 
-if "treatment" in crop_clean.columns:
-    invalid_treatments = sorted(set(crop_clean["treatment"].dropna()) - ALLOWED_TREATMENTS)
-    if invalid_treatments:
-        errors.append(f"Unexpected treatment values: {invalid_treatments}")
-
-if "yield_value" in crop_clean.columns and (crop_clean["yield_value"] < 0).any():
-    errors.append("yield_value contains negative values")
-```
-
-Save a validation report:
-
-```python
-validation_report = pd.DataFrame({
-    "status": ["error"] * len(errors) if errors else ["ok"],
-    "message": errors if errors else ["Validation passed"],
-})
-
-validation_report.to_csv(REPORTS_DIR / "validation_report.csv", index=False)
-validation_report
+report = pd.DataFrame(
+    [{"status": "error", "message": m} for m in hard_errors]
+    + [{"status": "warning", "message": m} for m in warnings]
+    or [{"status": "ok", "message": "Validation passed"}]
+)
+report.to_csv(REPORTS_DIR / "validation_report.csv", index=False)
+report
 ```
 
 ### Checkpoint
 
-You should have:
-
-```text
-outputs/reports/validation_report.csv
-```
+You have `outputs/reports/validation_report.csv`.
 
 ### Stretch
 
-Add one more validation rule:
+Break it on purpose: set one `plot_code` to `"ZZ-XX"` and confirm
+`validate_known_plots` now returns a structural error.
 
-- duplicate check
-- missing yield check
-- invalid date check
-- unexpected plot check
-
-## Module 6 Exercise: Transform And Visualize
+## Module 6 Exercise: Transform and Visualize
 
 ### Live Task
 
-Create crop summary:
+Quarantine impossible readings, then summarise and compare:
 
 ```python
-crop_summary = (
-    crop_clean
-    .dropna(subset=["crop", "treatment", "yield_value"])
-    .groupby(["crop", "treatment"], dropna=False)
-    .agg(
-        observations=("yield_value", "count"),
-        mean_yield=("yield_value", "mean"),
-        median_yield=("yield_value", "median"),
-        min_yield=("yield_value", "min"),
-        max_yield=("yield_value", "max"),
-    )
-    .reset_index()
-)
+def quarantine_out_of_range(cleaned):
+    out = cleaned.copy()
+    for name, (low, high) in ALLOWED_RANGES.items():
+        mask = out["measurement"] == name
+        bad = mask & ((out["value"] < low) | (out["value"] > high))
+        out.loc[bad, "value"] = float("nan")
+    return out
 
-crop_summary
-```
+trusted = quarantine_out_of_range(cleaned)
 
-Create treatment comparison:
-
-```python
-treatment_comparison = (
-    crop_summary
-    .pivot(index="crop", columns="treatment", values="mean_yield")
-    .reset_index()
-)
-
-if {"agrivoltaic", "open_sun_control"}.issubset(treatment_comparison.columns):
-    treatment_comparison["yield_difference"] = (
-        treatment_comparison["agrivoltaic"] - treatment_comparison["open_sun_control"]
-    )
-    treatment_comparison["yield_difference_pct"] = (
-        treatment_comparison["yield_difference"] / treatment_comparison["open_sun_control"] * 100
-    ).round(2)
-
-treatment_comparison
-```
-
-Save outputs:
-
-```python
 PROCESSED_DIR = Path("data/processed")
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-crop_summary.to_csv(PROCESSED_DIR / "crop_performance_summary.csv", index=False)
-treatment_comparison.to_csv(PROCESSED_DIR / "treatment_comparison.csv", index=False)
+daily = (
+    trusted.dropna(subset=["timestamp", "value"])
+    .groupby(["date", "treatment", "station", "measurement"], dropna=False)
+    .agg(observations=("value", "count"), mean_value=("value", "mean"),
+         min_value=("value", "min"), max_value=("value", "max"))
+    .reset_index()
+)
+daily.to_csv(PROCESSED_DIR / "daily_plot_summary.csv", index=False)
+
+BASELINE_BY_MEASUREMENT = {"temperature": "open_sun_control",
+                           "humidity": "open_sun_control",
+                           "irradiance": "ground_mounted_pv"}
+
+midday = trusted.dropna(subset=["timestamp", "value"]).set_index("timestamp")
+midday = midday.between_time("11:00", "14:00").reset_index()
+means = midday.groupby(["measurement", "treatment"])["value"].mean().to_dict()
+
+rows = []
+for measurement, baseline in BASELINE_BY_MEASUREMENT.items():
+    ag = means.get((measurement, "agrivoltaic"))
+    ref = means.get((measurement, baseline))
+    if ag is None or ref is None:
+        continue
+    diff = ag - ref
+    rows.append({"measurement": measurement, "agrivoltaic": round(ag, 2),
+                 "reference": baseline, "reference_value": round(ref, 2),
+                 "difference": round(diff, 2),
+                 "difference_pct": round(diff / ref * 100, 2)})
+
+comparison = pd.DataFrame(rows)
+comparison.to_csv(PROCESSED_DIR / "midday_microclimate.csv", index=False)
+comparison
 ```
 
-Create chart:
+Chart it:
 
 ```python
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 CHARTS_DIR = Path("outputs/charts")
 CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-plt.figure(figsize=(10, 6))
-sns.barplot(data=crop_summary, x="crop", y="mean_yield", hue="treatment")
-plt.title("Mean Crop Yield by Treatment")
-plt.xlabel("Crop")
-plt.ylabel("Mean yield")
-plt.tight_layout()
-plt.savefig(CHARTS_DIR / "mean_crop_yield_by_treatment.png", dpi=150)
-plt.close()
+fig, axes = plt.subplots(1, len(comparison), figsize=(11, 4))
+for ax, (_, row) in zip(axes, comparison.iterrows()):
+    ax.bar(["Open reference", "Agrivoltaic"],
+           [row["reference_value"], row["agrivoltaic"]],
+           color=["#F7C948", "#54D17A"])
+    ax.set_title(f"{row['measurement'].title()} ({row['difference_pct']:+}%)")
+    ax.grid(axis="y", alpha=0.3)
+fig.suptitle("Midday microclimate: agrivoltaic vs open reference")
+fig.tight_layout()
+fig.savefig(CHARTS_DIR / "midday_microclimate.png", dpi=150)
 ```
 
 ### Checkpoint
@@ -483,36 +381,34 @@ plt.close()
 You should have:
 
 ```text
-data/processed/crop_performance_summary.csv
-data/processed/treatment_comparison.csv
-outputs/charts/mean_crop_yield_by_treatment.png
+data/processed/daily_plot_summary.csv
+data/processed/midday_microclimate.csv
+outputs/charts/midday_microclimate.png
 ```
 
 ### Stretch
 
-Create a second chart for `yield_difference_pct`.
+Recompute the comparison for a different time window (e.g. `09:00`-`11:00`). Does
+the temperature gap shrink or grow away from peak sun?
 
 ## Closing Exercise: Responsible Interpretation
 
 Write 5-7 sentences:
 
-1. What does the processed data suggest?
-2. Which crop appears most promising under agrivoltaic conditions?
-3. What limitations should be communicated?
-4. What extra data would strengthen the analysis?
-5. What should we avoid claiming?
+1. What does the comparison actually show?
+2. Why is a cooler, drier midday microclimate interesting for crops?
+3. What does it *not* prove (e.g. yield)?
+4. Why is irradiance referenced against the ground-mounted PV, not the control field?
+5. What limitations should be communicated, and what extra data would help?
 
-Use careful language. This is a pilot dataset, not a universal answer for all Ghanaian farms.
+This is a single pilot site, not a universal answer for all Ghanaian farms.
 
 ## Final Checklist
 
-Before leaving, confirm that you created:
-
-- [ ] raw files in `data/raw/`
-- [ ] profile reports in `outputs/reports/`
-- [ ] validation report in `outputs/reports/`
-- [ ] crop summary in `data/processed/`
-- [ ] treatment comparison in `data/processed/`
-- [ ] chart in `outputs/charts/`
+- [ ] workbooks present in `data/raw/`
+- [ ] `outputs/reports/profile_readings.csv`
+- [ ] `outputs/reports/validation_report.csv`
+- [ ] `data/processed/daily_plot_summary.csv`
+- [ ] `data/processed/midday_microclimate.csv`
+- [ ] `outputs/charts/midday_microclimate.png`
 - [ ] short written interpretation
-

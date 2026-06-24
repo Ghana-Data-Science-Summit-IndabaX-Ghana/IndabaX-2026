@@ -1,0 +1,4 @@
+measurement,agrivoltaic,reference,reference_value,difference,difference_pct
+temperature,27.88,open_sun_control,35.15,-7.26,-20.67
+humidity,15.63,open_sun_control,24.29,-8.67,-35.67
+irradiance,590.79,ground_mounted_pv,560.37,30.42,5.43

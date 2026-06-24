@@ -1,0 +1,16 @@
+# Bonus only - for running the Airflow DAG demo (dags/agrivoltaics_pipeline.py).
+#
+# IMPORTANT: install this in a SEPARATE Python 3.11 or 3.12 environment.
+# Apache Airflow does NOT support Python 3.13+ yet, so it will not install in a
+# 3.14 venv. See 04_Bonus_Airflow.md for the exact steps.
+#
+# Airflow must be installed with its official constraints file, e.g.:
+#   AIRFLOW_VERSION=3.0.2
+#   PY=3.12
+#   pip install "apache-airflow==${AIRFLOW_VERSION}" \
+#     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PY}.txt"
+#
+# Then the pipeline's own dependencies:
+pandas
+openpyxl
+pyarrow
