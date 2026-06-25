@@ -167,7 +167,6 @@ TOOL_SCHEMAS: list[dict] = [
             }
         }
     }
-
     # TODO (Exercise 1): Add the escalation_trigger schema here.
     #
     # The function signature is:
@@ -266,17 +265,32 @@ class AmaAgent:
             # the system prompt for you (Exercise 3). Do NOT also pass
             # system_prompt= here, or the system prompt will be sent twice.
             response = chat(messages=self._get_messages(), tools=TOOL_SCHEMAS)
+            print(f"Step {steps}: {response}")
 
             # Step 2: check if the model wants to call a tool
             if response.tool_calls:
+                serialized_calls = [tc.to_dict() for tc in response.tool_calls]
+
+                # Step 3: append the tool call to history so the model
+                # can reason on it in the next iteration
+                # TODO (Exercise 2): Append the assistant's tool call request to history FIRST
+                # 1. Append assistant intent
+                self._add_message(
+                    role="assistant",
+                    content=response.content,
+                    tool_calls=serialized_calls
+                )
+
                 for tool_call in response.tool_calls:
                     tool_result = self._execute_tool(tool_call)
 
-                    # Step 3: append the tool result to history so the model
-                    # can reason on it in the next iteration
-                    # TODO (Exercise 2): append a message with role="tool"
-                    # Structure: {"role": "tool", "tool_call_id": ..., "content": ...}
-                    self._add_message(role="tool", content=tool_result)
+
+                    self._add_message(
+                        role="tool",
+                        tool_call_id=tool_call.id,
+                        name=tool_call.function.name,
+                        content=tool_result
+                    )
 
                 # Loop continues — the model will reason on the tool results
                 continue
@@ -284,6 +298,8 @@ class AmaAgent:
             # Step 4: no tool call → the model has a final answer
             # TODO (Exercise 2): extract and return the text response
             response_text = response.content
+
+            return response_text
 
     def _execute_tool(self, tool_call) -> str:
         """
@@ -343,10 +359,13 @@ class AmaAgent:
     # ║  very long conversations (context window exhaustion, Obj 2).       ║
     # ╚══════════════════════════════════════════════════════════════════════╝
 
-    def _add_message(self, role: str, content: str) -> None:
+    def _add_message(self, role: str, content: str, **kwargs) -> None:
         """Append a message to conversation history."""
         # TODO (Exercise 3): append {"role": role, "content": content}
-        self.history.append({"role": role, "content": content})
+
+        new_message = {"role": role, "content": content}
+        new_message.update(kwargs)
+        self.history.append(new_message)
 
     def _get_messages(self) -> list[dict]:
         """
@@ -355,3 +374,4 @@ class AmaAgent:
         """
         # TODO (Exercise 3): prepend the system prompt, then return self.history
         return [{"role": "system", "content": SYSTEM_PROMPT}] + self.history
+

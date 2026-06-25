@@ -91,41 +91,8 @@ def evaluate_escalation(
     """
     patient_context = patient_context or {}
 
-    is_pregnant = patient_context.get("is_pregnant", False)
-    age_group = patient_context.get("age_group", "")
-
-    escalate = False
-    reason = "No escalation criteria met."
-
-    if condition_id in ALWAYS_ESCALATE:
-        escalate = True
-        reason = f"Condition '{condition_id}' always requires hospital-level care."
-    elif severity in ("severe", "critical"):
-        escalate = True
-        reason = f"Severity '{severity}' requires immediate escalation."
-    elif is_pregnant and severity != "mild":
-        escalate = True
-        reason = "Pregnant patient with non-mild severity requires escalation."
-    elif age_group == "child" and severity in ("moderate", "severe", "critical"):
-        escalate = True
-        reason = f"Child patient with '{severity}' severity requires escalation."
-
-    if escalate:
-        action = "Go to the nearest hospital immediately."
-        contact = "0800-111-222"
-        recommended_level = 3
-    else:
-        action = "Visit your CHPS compound or health centre."
-        contact = None
-        condition = next(
-            (c for c in _SYMPTOMS_DB["conditions"] if c["id"] == condition_id), None
-        )
-        recommended_level = condition.get("recommended_level", 1) if condition else 1
-
-    return {
-        "escalate": escalate,
-        "reason": reason,
-        "action": action,
-        "contact": contact,
-        "recommended_level": recommended_level,
-    }
+    # TODO: implement escalation logic
+    raise NotImplementedError(
+        "evaluate_escalation is not implemented yet. "
+        "Complete Exercise 1 in tools/escalation_trigger.py"
+    )

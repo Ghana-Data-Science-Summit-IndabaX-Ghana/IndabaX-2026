@@ -130,43 +130,6 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "evaluate_escalation",
-            "description": "Evaluate if a patient's condition requires escalation to higher medical authority or emergency services based on their condition ID, severity, and context. Call this when symptoms worsen, red flags are detected, or standard protocols require risk assessment.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "condition_id": {
-                        "type": "string",
-                        "description": "The unique identifier or name of the suspected medical condition being evaluated."
-                    },
-                    "severity": {
-                        "type": "string",
-                        "enum": ["low", "medium", "mild", "high", "critical"],
-                        "description": "The current assessed severity level of the patient's symptoms."
-                    },
-                    "patient_context": {
-                        "type": "object",
-                        "description": "Optional: known patient context to improve matching.",
-                        "properties": {
-                            "age_group": {
-                                "type": "string",
-                                "enum": ["child", "adult", "elderly"],
-                                "description": "Approximate age group if mentioned.",
-                            },
-                            "is_pregnant": {
-                                "type": "boolean",
-                                "description": "True if the patient is pregnant.",
-                            },
-                        },
-                    },
-                },
-                "required": ["condition_id", "severity", "patient_context"]
-            }
-        }
-    }
     # TODO (Exercise 1): Add the escalation_trigger schema here.
     #
     # The function signature is:
@@ -276,8 +239,8 @@ class AmaAgent:
                 # TODO (Exercise 2): Append the assistant's tool call request to history FIRST
                 # 1. Append assistant intent
                 self._add_message(
-                    role="assistant",
-                    content=response.content,
+                    role=None,
+                    content=None,
                     tool_calls=serialized_calls
                 )
 
@@ -297,9 +260,8 @@ class AmaAgent:
 
             # Step 4: no tool call → the model has a final answer
             # TODO (Exercise 2): extract and return the text response
-            response_text = response.content
 
-            return response_text
+            return ""
 
     def _execute_tool(self, tool_call) -> str:
         """
@@ -362,8 +324,9 @@ class AmaAgent:
     def _add_message(self, role: str, content: str, **kwargs) -> None:
         """Append a message to conversation history."""
         # TODO (Exercise 3): append {"role": role, "content": content}
+        new_message = {}
 
-        new_message = {"role": role, "content": content}
+
         new_message.update(kwargs)
         self.history.append(new_message)
 
@@ -373,5 +336,5 @@ class AmaAgent:
         Must include the system prompt as the first message.
         """
         # TODO (Exercise 3): prepend the system prompt, then return self.history
-        return [{"role": "system", "content": SYSTEM_PROMPT}] + self.history
+        return []
 

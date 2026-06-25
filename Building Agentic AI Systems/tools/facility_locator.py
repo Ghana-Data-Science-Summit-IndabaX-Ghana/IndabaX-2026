@@ -136,27 +136,4 @@ def _find_best_facility(
     Returns the best-matching facility dict, or None.
     """
     # TODO: implement facility search and ranking logic
-    best_facility = None
-    best_score = -1
-
-    for facility in facilities:
-        # Hard filters
-        if facility["level"] < required_level:
-            continue
-        if needs_emergency and not facility["emergency"]:
-            continue
-
-        # Scoring
-        score = 0
-        if district and district.lower() in facility["district"].lower():
-            score += 3
-        if region and region.lower() in facility["region"].lower():
-            score += 2
-        if facility["level"] == required_level:
-            score += 1
-
-        if score > best_score:
-            best_score = score
-            best_facility = facility
-
-    return best_facility
+    return None
