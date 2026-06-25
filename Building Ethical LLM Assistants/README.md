@@ -98,8 +98,6 @@ llm-assistants/
 
 ## Key design decisions
 
-See `docs/adr/` for full rationale. In brief:
-
 - **MOCK_MODE** (default: on) — canned responses keyed by (scenario, stage, provider). The entire session including the audit runs offline.
 - **Dual provider** — Anthropic Claude Haiku 4.5 (native `system=`) and Google Gemma 4 (free tier, system prompt prepended). The provider toggle is pedagogically deliberate: Gemma's "free tier trains on your data" is a live consent/privacy teaching moment.
 - **Shared `core` + dependency injection** — the FastAPI backend and the notebook both call the same runner; the notebook passes its own inline, editable teaching artifacts into it.
