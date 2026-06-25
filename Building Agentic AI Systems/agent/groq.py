@@ -1,15 +1,15 @@
 """
-agent/openrouter.py
+agent/groq.py
 ─────────────────────────────────────────────────────────────────────────────
-Thin wrapper around the OpenRouter API.
+Thin wrapper around the Groq API.
 
-OpenRouter exposes an OpenAI-compatible API so the same client works
+Groq exposes an OpenAI-compatible API so the same client works
 for many models (Claude, Gemini, Llama, Mistral, etc.).
 
 You do NOT need to edit this file for the required exercises.
 It is provided as working infrastructure.
 
-Relevant docs: https://openrouter.ai/docs
+Relevant docs: https://console.groq.com/docs/api-reference#chat-create
 ─────────────────────────────────────────────────────────────────────────────
 """
 
@@ -17,20 +17,13 @@ import os
 import httpx
 import json
 from dataclasses import dataclass, field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-# Default model — change to any OpenRouter model string.
-# Recommended for this workshop (good tool-calling, free tier available):
-DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
-
-# Alternative models to try:
-# "anthropic/claude-3.5-haiku"        — fast, excellent tool calling
-# "google/gemini-flash-1.5"           — fast and cheap
-# "mistralai/mistral-nemo:free"        — free, good reasoning
-# "anthropic/claude-3.5-sonnet"       — most capable, costs more
-
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
+MODEL_BASE_URL = os.getenv("MODEL_BASE_URL")
 
 
 @dataclass
@@ -48,6 +41,17 @@ class ToolCall:
     @property
     def function(self):
         return self._FunctionAccessor(self.function_name, self.function_arguments)
+
+    def to_dict(self) -> dict:
+        """Convert the custom ToolCall object into the standard API dictionary format."""
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {
+                "name": self.function_name,
+                "arguments": self.function_arguments
+            }
+        }
 
 
 @dataclass
@@ -68,7 +72,7 @@ def chat(
     max_tokens: int = 1024,
 ) -> ChatResponse:
     """
-    Send a list of messages to OpenRouter and return a normalised response.
+    Send a list of messages to Groq and return a normalised response.
 
     Parameters
     ----------
@@ -76,7 +80,7 @@ def chat(
     tools         : List of tool schemas (function-calling format).
     system_prompt : If provided, prepended as the first system message.
                     Use this OR include system in messages — not both.
-    model         : Any OpenRouter model string.
+    model         : Any Groq model string.
     temperature   : Lower = more deterministic (0.2 recommended for triage).
     max_tokens    : Maximum tokens in the response.
 
@@ -87,14 +91,14 @@ def chat(
 
     Raises
     ------
-    ValueError    : If OPENROUTER_API_KEY is not set.
+    ValueError    : If GROQ_API_KEY is not set.
     httpx.HTTPStatusError : On API errors (4xx / 5xx).
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError(
-            "OPENROUTER_API_KEY environment variable is not set.\n"
-            "Get a free key at https://openrouter.ai and add it to your .env file."
+            "GROQ_API_KEY environment variable is not set.\n"
+            "Get a free key at https://console.groq.com/home and add it to your .env file."
         )
 
     # Build the message list
@@ -116,12 +120,13 @@ def chat(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/ama-health-agent",  # optional, for OpenRouter analytics
         "X-Title": "AMA Health Agent Workshop",
     }
 
+    print(f"Sending request to {MODEL_BASE_URL}/chat/completions with payload:", payload)
+
     response = httpx.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
+        f"{MODEL_BASE_URL}/chat/completions",
         json=payload,
         headers=headers,
         timeout=60.0,

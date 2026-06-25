@@ -19,7 +19,7 @@ YOUR TASKS (see EXERCISE comments throughout this file):
 
 import json
 from typing import Any
-from agent.openrouter import chat # see agent/openrouter.py
+from agent.groq import chat # see agent/groq.py
 from tools.symptom_checker import check_symptoms
 from tools.facility_locator import find_facility
 from tools.escalation_trigger import evaluate_escalation
@@ -238,7 +238,7 @@ class AmaAgent:
     # ║  3. If the model returns a plain text response:                     ║
     # ║     a. Return that text as the final answer                         ║
     # ║                                                                      ║
-    # ║  Look at agent/openrouter.py to understand what chat() returns.    ║
+    # ║  Look at agent/groq.py to understand what chat() returns.    ║
     # ║  The return object has: .content (str), .tool_calls (list|None)     ║
     # ║                                                                      ║
     # ║  OPTIONAL (Exercise 5): enforce self.max_steps — if the loop       ║
@@ -261,7 +261,7 @@ class AmaAgent:
             # "I'm having trouble processing your request. Please visit your nearest health facility."
 
             # Step 1: call the LLM
-            # TODO (Exercise 2): call chat() from agent/openrouter.py
+            # TODO (Exercise 2): call chat() from agent/groq.py
             # Use self._get_messages() for the messages argument — it prepends
             # the system prompt for you (Exercise 3). Do NOT also pass
             # system_prompt= here, or the system prompt will be sent twice.

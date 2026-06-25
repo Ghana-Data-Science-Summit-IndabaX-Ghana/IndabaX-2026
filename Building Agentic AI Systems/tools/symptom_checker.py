@@ -118,6 +118,53 @@ def _match_conditions(symptoms: list[str], patient_context: dict) -> list[dict]:
     """
     # TODO: implement matching logic (see exercise above)
     results = []
+    is_pregnant = patient_context.get("is_pregnant", False)
+
+    for condition in _SYMPTOMS_DB["conditions"]:
+        if condition["id"] == "unknown":
+            continue
+
+        primary = [s.lower() for s in condition["symptoms"].get("primary", [])]
+        secondary = [s.lower() for s in condition["symptoms"].get("secondary", [])]
+        severe = [s.lower() for s in condition["symptoms"].get("severe_indicators", [])]
+
+        matched = []
+        score = 0
+        severe_present = False
+
+        for symptom in symptoms:
+            if symptom in primary:
+                score += 2
+                matched.append(symptom)
+            elif symptom in secondary:
+                score += 1
+                matched.append(symptom)
+            if symptom in severe:
+                score += 3
+                severe_present = True
+
+        if is_pregnant and condition["id"] == "maternal_complication":
+            score += 3
+
+        if score == 0:
+            continue
+
+        confidence = "high" if score >= 4 else "medium" if score >= 2 else "low"
+
+        results.append({
+            "condition": condition["name"],
+            "condition_id": condition["id"],
+            "urgency": condition["urgency"],
+            "confidence": confidence,
+            "triage_notes": condition["triage_notes"],
+            "recommended_facility_level": condition["recommended_level"],
+            "severe_indicators_present": severe_present,
+            "matched_symptoms": matched,
+        })
+
+    results.sort(key=lambda x: (
+        {"high": 3, "medium": 2, "low": 1}[x["confidence"]]
+    ), reverse=True)
 
     # Fallback: return unknown condition if nothing matched
     if not results:

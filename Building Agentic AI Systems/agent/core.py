@@ -19,7 +19,7 @@ YOUR TASKS (see EXERCISE comments throughout this file):
 
 import json
 from typing import Any
-from agent.openrouter import chat # see agent/openrouter.py
+from agent.groq import chat # see agent/groq.py
 from tools.symptom_checker import check_symptoms
 from tools.facility_locator import find_facility
 from tools.escalation_trigger import evaluate_escalation
@@ -130,6 +130,43 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "evaluate_escalation",
+            "description": "Evaluate if a patient's condition requires escalation to higher medical authority or emergency services based on their condition ID, severity, and context. Call this when symptoms worsen, red flags are detected, or standard protocols require risk assessment.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "condition_id": {
+                        "type": "string",
+                        "description": "The unique identifier or name of the suspected medical condition being evaluated."
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["low", "medium", "mild", "high", "critical"],
+                        "description": "The current assessed severity level of the patient's symptoms."
+                    },
+                    "patient_context": {
+                        "type": "object",
+                        "description": "Optional: known patient context to improve matching.",
+                        "properties": {
+                            "age_group": {
+                                "type": "string",
+                                "enum": ["child", "adult", "elderly"],
+                                "description": "Approximate age group if mentioned.",
+                            },
+                            "is_pregnant": {
+                                "type": "boolean",
+                                "description": "True if the patient is pregnant.",
+                            },
+                        },
+                    },
+                },
+                "required": ["condition_id", "severity", "patient_context"]
+            }
+        }
+    }
     # TODO (Exercise 1): Add the escalation_trigger schema here.
     #
     # The function signature is:
@@ -200,7 +237,7 @@ class AmaAgent:
     # ║  3. If the model returns a plain text response:                     ║
     # ║     a. Return that text as the final answer                         ║
     # ║                                                                      ║
-    # ║  Look at agent/openrouter.py to understand what chat() returns.    ║
+    # ║  Look at agent/groq.py to understand what chat() returns.    ║
     # ║  The return object has: .content (str), .tool_calls (list|None)     ║
     # ║                                                                      ║
     # ║  OPTIONAL (Exercise 5): enforce self.max_steps — if the loop       ║
@@ -223,30 +260,46 @@ class AmaAgent:
             # "I'm having trouble processing your request. Please visit your nearest health facility."
 
             # Step 1: call the LLM
-            # TODO (Exercise 2): call chat() from agent/openrouter.py
+            # TODO (Exercise 2): call chat() from agent/groq.py
             # Use self._get_messages() for the messages argument — it prepends
             # the system prompt for you (Exercise 3). Do NOT also pass
             # system_prompt= here, or the system prompt will be sent twice.
-            #   response = chat(messages=self._get_messages(), tools=TOOL_SCHEMAS)
-            response = None  # replace this line
+            response = chat(messages=self._get_messages(), tools=TOOL_SCHEMAS)
+            print(f"Step {steps}: {response}")
 
             # Step 2: check if the model wants to call a tool
             if response.tool_calls:
+                serialized_calls = [tc.to_dict() for tc in response.tool_calls]
+
+                # Step 3: append the tool call to history so the model
+                # can reason on it in the next iteration
+                # TODO (Exercise 2): Append the assistant's tool call request to history FIRST
+                # 1. Append assistant intent
+                self._add_message(
+                    role="assistant",
+                    content=response.content,
+                    tool_calls=serialized_calls
+                )
+
                 for tool_call in response.tool_calls:
                     tool_result = self._execute_tool(tool_call)
 
-                    # Step 3: append the tool result to history so the model
-                    # can reason on it in the next iteration
-                    # TODO (Exercise 2): append a message with role="tool"
-                    # Structure: {"role": "tool", "tool_call_id": ..., "content": ...}
-                    pass  # replace this line
+
+                    self._add_message(
+                        role="tool",
+                        tool_call_id=tool_call.id,
+                        name=tool_call.function.name,
+                        content=tool_result
+                    )
 
                 # Loop continues — the model will reason on the tool results
                 continue
 
             # Step 4: no tool call → the model has a final answer
             # TODO (Exercise 2): extract and return the text response
-            return ""  # replace this line
+            response_text = response.content
+
+            return response_text
 
     def _execute_tool(self, tool_call) -> str:
         """
@@ -306,10 +359,13 @@ class AmaAgent:
     # ║  very long conversations (context window exhaustion, Obj 2).       ║
     # ╚══════════════════════════════════════════════════════════════════════╝
 
-    def _add_message(self, role: str, content: str) -> None:
+    def _add_message(self, role: str, content: str, **kwargs) -> None:
         """Append a message to conversation history."""
         # TODO (Exercise 3): append {"role": role, "content": content}
-        pass  # replace this line
+
+        new_message = {"role": role, "content": content}
+        new_message.update(kwargs)
+        self.history.append(new_message)
 
     def _get_messages(self) -> list[dict]:
         """
@@ -317,4 +373,5 @@ class AmaAgent:
         Must include the system prompt as the first message.
         """
         # TODO (Exercise 3): prepend the system prompt, then return self.history
-        return []  # replace this line
+        return [{"role": "system", "content": SYSTEM_PROMPT}] + self.history
+
