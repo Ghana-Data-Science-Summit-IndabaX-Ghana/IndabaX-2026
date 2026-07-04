@@ -21,6 +21,8 @@ Click a badge → the notebook opens directly in Google Colab. No local installa
 
 ### Part 1 — How Vision Models Work
 
+View [Presentation slides](https://canva.link/95z8pjnpz6okeye)
+
 Start from a single photograph taken by a community health worker in Brong-Ahafo and trace exactly what the model does to it.
 
 | Section | Topics |
